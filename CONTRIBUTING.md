@@ -42,7 +42,7 @@ To setup your development environment you need to:
 2. To build `langchain4j-microprofile` run:
     
     ```
-    mvn clean install
+    mvn package
     ```
 
 3. To run the tests:   
