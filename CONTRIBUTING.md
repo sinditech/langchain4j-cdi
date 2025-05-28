@@ -39,7 +39,7 @@ To setup your development environment you need to:
 
 1. First `cd` to the directory where you cloned the project (eg: `cd langchain4j-microprofile`)
 
-2. To build `langchain4j-microprofile` run:
+2. To build `langchain4j-cdi` run:
     
     ```
     mvn package
