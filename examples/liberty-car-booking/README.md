@@ -10,9 +10,10 @@ These are the steps to run this service.
  	> `mvn liberty:dev -e`
  	
 ## Application requirements:
+
 - JDK 17 and higher
 - Maven 3.9.9 and higher
-- LangChain4j 1.0.0-beta2 or higher.
+- LangChain4j 1.0.0-beta5 or higher.
 - Testing against GPT 4.0 on a dedicated Azure instance (to be customized in your context). 
 
 Then you can access the application through the browser of your choice.
