@@ -26,7 +26,7 @@ A clear and concise description of what you expected to happen.
 - LangChain4j version: 
 - Java version: 
 - LangChain4J-CDI version: 
-- Jakarta EE / Microprofile version:
+- Microprofile version:
 
 **Additional context**
 Add any other context about the problem here.
