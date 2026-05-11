@@ -61,6 +61,10 @@
             <artifactId>langchain4j-cdi-build-compatible-ext</artifactId>
         </dependency>
         <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-agentic</artifactId>
+        </dependency>
+        <dependency>
             <groupId>dev.langchain4j.cdi.mp</groupId>
             <artifactId>langchain4j-cdi-config</artifactId>
         </dependency>

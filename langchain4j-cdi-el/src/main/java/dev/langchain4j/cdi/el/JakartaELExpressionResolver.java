@@ -4,6 +4,8 @@ import dev.langchain4j.cdi.spi.ExpressionResolver;
 import jakarta.el.ELProcessor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * ExpressionResolver that evaluates Jakarta EE Expression Language expressions enclosed in {@code #{...}} delimiters.
@@ -24,13 +26,15 @@ import java.util.logging.Logger;
 public class JakartaELExpressionResolver implements ExpressionResolver {
 
     private static final Logger LOGGER = Logger.getLogger(JakartaELExpressionResolver.class.getName());
+    private static final Pattern EL_PATTERN = Pattern.compile("^#\\{(.+)\\}$");
 
     @Override
     public String resolve(String value) {
-        if (!value.startsWith("#{") || !value.endsWith("}")) {
+        Matcher matcher = EL_PATTERN.matcher(value);
+        if (!matcher.matches()) {
             return value;
         }
-        String expression = value.substring(2, value.length() - 1);
+        String expression = matcher.group(1);
         try {
             Object result = newProcessor().eval(expression);
             return result != null ? result.toString() : value;
