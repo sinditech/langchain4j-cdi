@@ -2,6 +2,8 @@ package dev.langchain4j.cdi.core.integrationtests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.langchain4j.cdi.integrationtests.AgentChatRestService;
+import dev.langchain4j.cdi.integrationtests.AgentChatService;
 import dev.langchain4j.cdi.integrationtests.ChatAiService;
 import dev.langchain4j.cdi.integrationtests.ChatRestService;
 import dev.langchain4j.cdi.integrationtests.GuardrailChatAiService;
@@ -53,9 +55,12 @@ public class ChatRestServiceArquillianTest {
                 .toFile();
 
         File[] deps = Maven.resolver()
-                .loadPomFromFile("pom.xml") // lit ton pom
-                .importRuntimeDependencies() // récupère ce qu'il faut pour tourner
-                .resolve("dev.langchain4j.cdi:langchain4j-cdi-portable-ext", "org.assertj:assertj-core")
+                .loadPomFromFile("pom.xml")
+                .importRuntimeDependencies()
+                .resolve(
+                        "dev.langchain4j.cdi:langchain4j-cdi-portable-ext",
+                        "dev.langchain4j:langchain4j-agentic",
+                        "org.assertj:assertj-core")
                 .withTransitivity()
                 .asFile();
 
@@ -73,6 +78,8 @@ public class ChatRestServiceArquillianTest {
                         GuardrailChatRestService.class,
                         NoEmptyMessageInputGuardrail.class,
                         PassThroughOutputGuardrail.class,
+                        AgentChatService.class,
+                        AgentChatRestService.class,
                         JaxRsApplication.class,
                         DummyLLConfig.class,
                         ChatModelMock.class,
@@ -91,8 +98,8 @@ public class ChatRestServiceArquillianTest {
                         folder,
                         1,
                         (BiPredicate<Path, BasicFileAttributes>) (t, u) -> {
-                            String finleName = t.getFileName().toString();
-                            return finleName.startsWith(prefix) && finleName.endsWith(".jar");
+                            String fileName = t.getFileName().toString();
+                            return fileName.startsWith(prefix) && fileName.endsWith(".jar");
                         },
                         FileVisitOption.FOLLOW_LINKS)
                 .findFirst();
@@ -106,11 +113,22 @@ public class ChatRestServiceArquillianTest {
     public void testChatRestService() {
         String chatEndpoint = baseURL + "chat";
         try (Client client = ClientBuilder.newClient()) {
-            System.out.println(
-                    "***************************************************************************************");
-            System.out.println(chatEndpoint);
-            System.out.println(
-                    "***************************************************************************************");
+            WebTarget target = client.target(chatEndpoint);
+
+            String question = "What is the meaning of life?";
+            Response response = target.request(MediaType.APPLICATION_JSON)
+                    .post(Entity.entity(question, MediaType.APPLICATION_JSON));
+
+            assertThat(response.getStatus()).isEqualTo(200);
+            String result = response.readEntity(String.class);
+            assertThat(result).isNotNull().isEqualTo("ok EmbeddingStoreTextSegment{}");
+        }
+    }
+
+    @Test
+    public void testAgentChatRestService() {
+        String chatEndpoint = baseURL + "agent-chat";
+        try (Client client = ClientBuilder.newClient()) {
             WebTarget target = client.target(chatEndpoint);
 
             String question = "What is the meaning of life?";
