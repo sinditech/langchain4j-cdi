@@ -20,10 +20,12 @@ Enterprise CDI extension for LangChain4j - inject AI services directly into your
 - [Dependencies](#dependencies)
 - [Configuration Reference](#configuration-reference)
 - [AI Service Registration](#ai-service-registration)
+- [Agent Registration](#agent-registration)
 - [Tools and Function Calling](#tools-and-function-calling)
 - [RAG (Retrieval Augmented Generation)](#rag-retrieval-augmented-generation)
 - [Chat Memory](#chat-memory)
 - [MicroProfile Integration](#microprofile-integration)
+- [Expression Resolvers](#expression-resolvers)
 - [MCP Server](langchain4j-cdi-mcp/README.md) — Expose your CDI beans as an MCP server
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -35,6 +37,7 @@ Enterprise CDI extension for LangChain4j - inject AI services directly into your
 This project provides seamless integration between [LangChain4j](https://docs.langchain4j.dev/) and CDI (Contexts and Dependency Injection), enabling you to:
 
 - **Inject AI services** as CDI beans using `@RegisterAIService`
+- **Build agentic systems** with `@RegisterAgent` for multi-agent workflows (sequences, loops, supervisors, A2A)
 - **Configure LLM components** via properties (can use microprofile configuration adapter or provide your own)
 - **Add resilience** with MicroProfile Fault Tolerance (`@Retry`, `@Timeout`, `@CircuitBreaker`)
 - **Monitor AI operations** with MicroProfile Telemetry/OpenTelemetry
@@ -210,9 +213,12 @@ public class AssistantResource {
 | `langchain4j-cdi-core` | Core CDI integration classes |
 | `langchain4j-cdi-portable-ext` | Runtime CDI extension |
 | `langchain4j-cdi-build-compatible-ext` | Build-time CDI extension |
-| `langchain4j-cdi-config` | MicroProfile Config integration |
+| `langchain4j-cdi-config` | MicroProfile Config integration (also provides `${...}` expression resolver) |
+| `langchain4j-cdi-el` | Jakarta EL expression resolver for `#{...}` expressions in annotation attributes |
 | `langchain4j-cdi-fault-tolerance` | MicroProfile Fault Tolerance support |
 | `langchain4j-cdi-telemetry` | OpenTelemetry metrics for AI operations |
+| `langchain4j-agentic` | LangChain4j agentic framework (required for `@RegisterAgent`) |
+| `langchain4j-agentic-a2a` | A2A protocol support (required for A2A topology) |
 
 ### Optional MicroProfile Modules
 
@@ -235,6 +241,13 @@ public class AssistantResource {
 <dependency>
     <groupId>dev.langchain4j.cdi</groupId>
     <artifactId>langchain4j-cdi-config</artifactId>
+    <version>${langchain4j-cdi.version}</version>
+</dependency>
+
+<!-- To resolve Jakarta EL expressions #{...} in annotation attributes -->
+<dependency>
+    <groupId>dev.langchain4j.cdi</groupId>
+    <artifactId>langchain4j-cdi-el</artifactId>
     <version>${langchain4j-cdi.version}</version>
 </dependency>
 ```
@@ -461,14 +474,14 @@ public interface MyAiService {
 |-----------|---------|-------------|
 | `scope` | `RequestScoped.class` | CDI scope for the AI service bean |
 | `tools` | `{}` | Array of CDI bean classes containing `@Tool` methods |
-| `chatModelName` | `"#default"` | Name of the ChatModel bean. `"#default"` uses the default bean |
-| `chatMemoryName` | `""` | Name of ChatMemory bean (empty = no memory) |
-| `contentRetrieverName` | `""` | Name of ContentRetriever bean for RAG |
-| `retrievalAugmentorName` | `""` | Name of RetrievalAugmentor bean (alternative to contentRetriever) |
-| `moderationModelName` | `""` | Name of ModerationModel bean for content moderation |
-| `streamingChatModelName` | `""` | Name of StreamingChatModel bean for streaming responses |
-| `chatMemoryProviderName` | `""` | Name of ChatMemoryProvider bean (for per-user memory) |
-| `toolProviderName` | `""` | Name of ToolProvider bean (dynamic tool discovery) |
+| `chatModelName` | `"#default"` | Name of the ChatModel bean. `"#default"` uses the default bean. Supports [expressions](#expression-resolvers) |
+| `chatMemoryName` | `""` | Name of ChatMemory bean (empty = no memory). Supports [expressions](#expression-resolvers) |
+| `contentRetrieverName` | `""` | Name of ContentRetriever bean for RAG. Supports [expressions](#expression-resolvers) |
+| `retrievalAugmentorName` | `""` | Name of RetrievalAugmentor bean (alternative to contentRetriever). Supports [expressions](#expression-resolvers) |
+| `moderationModelName` | `""` | Name of ModerationModel bean for content moderation. Supports [expressions](#expression-resolvers) |
+| `streamingChatModelName` | `""` | Name of StreamingChatModel bean for streaming responses. Supports [expressions](#expression-resolvers) |
+| `chatMemoryProviderName` | `""` | Name of ChatMemoryProvider bean (for per-user memory). Supports [expressions](#expression-resolvers) |
+| `toolProviderName` | `""` | Name of ToolProvider bean (dynamic tool discovery). Supports [expressions](#expression-resolvers) |
 
 ### LangChain4j Annotations
 
@@ -750,6 +763,316 @@ public class MessageLengthGuardrail implements InputGuardrail {
 
 ---
 
+## Agent Registration
+
+The `@RegisterAgent` annotation enables declarative registration of [LangChain4j Agentic](https://docs.langchain4j.dev/tutorials/agentic) systems as CDI beans. While `@RegisterAIService` creates simple AI services backed by a single LLM call, `@RegisterAgent` creates agentic systems that can orchestrate multiple sub-agents in workflows such as sequences, loops, parallel execution, and supervisor-based delegation.
+
+### Dependencies
+
+Add the agentic dependency alongside the CDI extension you already use:
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-agentic</artifactId>
+    <version>${langchain4j.version}</version>
+</dependency>
+```
+
+For A2A (Agent-to-Agent) topology, also add:
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-agentic-a2a</artifactId>
+    <version>${langchain4j.version}</version>
+</dependency>
+```
+
+### @RegisterAgent Annotation
+
+```java
+@RegisterAgent(
+    name = "my-agent",                         // CDI bean name and agent logical name
+    description = "A helpful agent",           // Agent description for orchestrators
+    topology = AgentTopologyType.SIMPLE,       // Agent topology (default: SIMPLE)
+    scope = ApplicationScoped.class,           // CDI scope (default: ApplicationScoped)
+    chatModelName = "#default",                // Name of ChatModel bean
+    tools = {MyTools.class},                   // Tool classes
+    chatMemoryName = "my-memory",              // Name of ChatMemory bean
+    outputKey = "result"                       // Key for storing output in agentic scope
+)
+public interface MyAgent {
+
+    @Agent(description = "Process the request")
+    String process(@V("input") String input);
+}
+```
+
+### Attribute Reference
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `name` | `""` | CDI bean name and agent logical name. When set, the bean is registered with `@Named` and can be referenced as a sub-agent by other agents |
+| `description` | `""` | Agent description, used by supervisors and planners to select agents |
+| `topology` | `SIMPLE` | Agent topology type (see [Topologies](#topologies)) |
+| `scope` | `ApplicationScoped.class` | CDI scope for the agent bean |
+| `outputKey` | `""` | Key used to store this agent's output in the shared agentic scope |
+| `async` | `false` | Whether the agent runs asynchronously |
+| `subAgentNames` | `{}` | CDI bean names of sub-agents for composed topologies |
+| `maxIterations` | `10` | Maximum loop iterations (LOOP topology only) |
+| `maxAgentsInvocations` | `10` | Maximum agent invocations (SUPERVISOR topology only) |
+| `chatModelName` | `"#default"` | Name of the ChatModel bean. `"#default"` uses the default bean |
+| `streamingChatModelName` | `""` | Name of StreamingChatModel bean |
+| `tools` | `{}` | Array of tool classes containing `@Tool` methods |
+| `toolProviderName` | `""` | Name of ToolProvider bean (dynamic tool discovery) |
+| `chatMemoryName` | `""` | Name of ChatMemory bean |
+| `chatMemoryProviderName` | `""` | Name of ChatMemoryProvider bean |
+| `contentRetrieverName` | `""` | Name of ContentRetriever bean for RAG |
+| `retrievalAugmentorName` | `""` | Name of RetrievalAugmentor bean |
+| `inputGuardrails` | `{}` | Input guardrail classes |
+| `outputGuardrails` | `{}` | Output guardrail classes |
+| `inputGuardrailNames` | `{}` | Named CDI beans implementing InputGuardrail |
+| `outputGuardrailNames` | `{}` | Named CDI beans implementing OutputGuardrail |
+| `agentListenerName` | `""` | Name of AgentListener bean for observability |
+| `a2aServerUrl` | `""` | URL of the A2A server (A2A topology only) |
+
+### Name Resolution
+
+Bean name resolution follows the same conventions as `@RegisterAIService`:
+
+| Value | Behavior |
+|-------|----------|
+| `"#default"` | Use the default (unqualified) CDI bean |
+| `""` (empty) | Ignore this dependency |
+| `"my-bean"` | Use the bean with `@Named("my-bean")` |
+| `"${prop.key}"` | Resolve via MicroProfile Config (requires `langchain4j-cdi-config`) |
+| `"#{el.expression}"` | Evaluate as Jakarta EL expression (requires `langchain4j-cdi-el`) |
+
+When `name` is set on `@RegisterAgent`, the agent bean is automatically registered with that `@Named` qualifier, making it injectable by name without a separate `@Named` annotation on the interface.
+
+String attributes that support expressions include: `name`, `description`, `outputKey`, `chatModelName`, `streamingChatModelName`, `toolProviderName`, `chatMemoryName`, `chatMemoryProviderName`, `contentRetrieverName`, `retrievalAugmentorName`, `agentListenerName`, and each element of `subAgentNames`.
+
+### Topologies
+
+The `topology` attribute determines how the agent system is built. Each topology maps to a builder in `AgenticServices`.
+
+#### SIMPLE (default)
+
+A single agent backed by a chat model. Equivalent to `@RegisterAIService` but with agent-specific features (output key, listener, agentic scope).
+
+```java
+@RegisterAgent(
+    name = "style-editor",
+    chatModelName = "ollama",
+    outputKey = "story")
+public interface StyleEditor {
+
+    @UserMessage("Rewrite the following story in {{style}} style: {{story}}")
+    @Agent(description = "Edit a story to match a given style", outputKey = "story")
+    String editStory(@V("story") String story, @V("style") String style);
+}
+```
+
+#### SEQUENCE
+
+Executes sub-agents one after another in order. Each agent can read previous agents' outputs from the shared scope via their output keys.
+
+```java
+@RegisterAgent(
+    name = "content-pipeline",
+    topology = AgentTopologyType.SEQUENCE,
+    subAgentNames = {"researcher", "writer", "reviewer"},
+    outputKey = "final-content")
+public interface ContentPipeline {
+
+    @Agent
+    String produceContent(@V("topic") String topic);
+}
+```
+
+#### LOOP
+
+Repeats sub-agents until an exit condition is met or `maxIterations` is reached.
+
+```java
+@RegisterAgent(
+    name = "refinement-loop",
+    topology = AgentTopologyType.LOOP,
+    subAgentNames = {"scorer", "editor"},
+    maxIterations = 5)
+public interface RefinementLoop {
+
+    @Agent
+    String refine(@V("draft") String draft);
+}
+```
+
+#### PARALLEL
+
+Executes all sub-agents concurrently and merges their results.
+
+```java
+@RegisterAgent(
+    name = "multi-analyst",
+    topology = AgentTopologyType.PARALLEL,
+    subAgentNames = {"technical-analyst", "business-analyst", "risk-analyst"},
+    outputKey = "analysis")
+public interface MultiAnalyst {
+
+    @Agent
+    String analyze(@V("proposal") String proposal);
+}
+```
+
+#### CONDITIONAL
+
+Routes to a specific sub-agent based on the input conditions.
+
+```java
+@RegisterAgent(
+    name = "router",
+    topology = AgentTopologyType.CONDITIONAL,
+    subAgentNames = {"support-agent", "sales-agent", "billing-agent"})
+public interface RequestRouter {
+
+    @Agent
+    String route(@V("request") String request);
+}
+```
+
+#### SUPERVISOR
+
+An LLM-driven orchestrator that dynamically selects which sub-agents to invoke based on the task. Requires a `ChatModel` and uses agent descriptions to make routing decisions.
+
+```java
+@RegisterAgent(
+    name = "project-manager",
+    topology = AgentTopologyType.SUPERVISOR,
+    chatModelName = "gpt4",
+    subAgentNames = {"developer", "tester", "documenter"},
+    maxAgentsInvocations = 15)
+public interface ProjectManager {
+
+    @Agent
+    String manageTask(@V("task") String task);
+}
+```
+
+#### PLANNER
+
+Similar to SUPERVISOR but creates an explicit plan before execution, then follows the plan step by step.
+
+```java
+@RegisterAgent(
+    name = "project-planner",
+    topology = AgentTopologyType.PLANNER,
+    subAgentNames = {"researcher", "developer", "reviewer"})
+public interface ProjectPlanner {
+
+    @Agent
+    String executeProject(@V("requirements") String requirements);
+}
+```
+
+#### A2A (Agent-to-Agent Protocol)
+
+Connects to a remote agent via the [A2A protocol](https://google.github.io/A2A/). The remote agent runs as a separate service and is accessed over HTTP. No `ChatModel` is needed locally.
+
+```java
+@RegisterAgent(
+    name = "creative-writer",
+    topology = AgentTopologyType.A2A,
+    a2aServerUrl = "http://localhost:8080",
+    outputKey = "story")
+public interface RemoteWriter {
+
+    @Agent(description = "Generate a story based on the given topic", outputKey = "story")
+    String generateStory(@V("topic") String topic);
+}
+```
+
+### Composing Agents
+
+Agents registered with `@RegisterAgent` can be composed into larger workflows by referencing them as sub-agents via their `name`:
+
+```java
+// Step 1: A remote A2A agent that writes stories
+@RegisterAgent(
+    name = "creative-writer",
+    topology = AgentTopologyType.A2A,
+    a2aServerUrl = "http://localhost:8080",
+    outputKey = "story")
+public interface CreativeWriter {
+    @Agent(description = "Generate a Norse saga", outputKey = "story")
+    String generateStory(@V("topic") String topic);
+}
+
+// Step 2: A local agent that edits stories
+@RegisterAgent(
+    name = "style-editor",
+    chatModelName = "ollama",
+    outputKey = "story")
+public interface StyleEditor {
+    @UserMessage("Rewrite this saga in {{style}} style: {{story}}")
+    @Agent(description = "Edit a saga to match a style", outputKey = "story")
+    String editStory(@V("story") String story, @V("style") String style);
+}
+
+// Step 3: A sequence that chains them together
+@RegisterAgent(
+    topology = AgentTopologyType.SEQUENCE,
+    subAgentNames = {"creative-writer", "style-editor"},
+    outputKey = "story")
+public interface StyledWriter {
+    @Agent
+    String writeStoryWithStyle(@V("topic") String topic, @V("style") String style);
+}
+```
+
+Sub-agents can be any combination of `@RegisterAgent` beans and manually produced CDI beans (via `@Produces @Named`). This is useful for agents that need programmatic configuration, such as a loop with a custom exit condition:
+
+```java
+@ApplicationScoped
+public class AgentProducers {
+
+    @Inject @Named("scorer") Scorer scorer;
+    @Inject StyleEditor styleEditor;
+
+    @Produces
+    @Named("review-loop")
+    public UntypedAgent reviewLoop() {
+        return AgenticServices.loopBuilder()
+                .subAgents(
+                    CommonAgentCreator.toAgentExecutor(scorer),
+                    CommonAgentCreator.toAgentExecutor(styleEditor))
+                .maxIterations(5)
+                .exitCondition(scope -> {
+                    Object score = scope.readState("score");
+                    return score instanceof Number n && n.doubleValue() >= 0.8;
+                })
+                .build();
+    }
+}
+```
+
+**Important:** When passing `@RegisterAgent` CDI beans directly to programmatic agentic builders (like `loopBuilder().subAgents(...)`), wrap them with `CommonAgentCreator.toAgentExecutor()`. CDI client proxies (used for `@ApplicationScoped` beans) lose method annotations, preventing the agentic framework from finding the agent's entry point. This wrapper inspects the original interface instead. This is not needed when using `subAgentNames` in `@RegisterAgent` — the framework handles it automatically.
+
+### Differences from @RegisterAIService
+
+| Feature | `@RegisterAIService` | `@RegisterAgent` |
+|---------|---------------------|-------------------|
+| Default scope | `RequestScoped` | `ApplicationScoped` |
+| Moderation model | Supported | Not supported |
+| Agent topologies | N/A | SIMPLE, SEQUENCE, LOOP, PARALLEL, CONDITIONAL, SUPERVISOR, PLANNER, A2A |
+| Sub-agent orchestration | N/A | Via `subAgentNames` |
+| Output key / agentic scope | N/A | Supported |
+| Agent listener | N/A | Via `agentListenerName` |
+| CDI bean naming | Requires separate `@Named` | Built-in via `name` attribute |
+| A2A protocol | N/A | Via `a2aServerUrl` |
+
+---
+
 ## Tools and Function Calling
 
 Tools enable your AI service to call your business logic.
@@ -952,6 +1275,107 @@ public interface UserChatBot {
     @SystemMessage("You are a helpful assistant.")
     String chat(@MemoryId String sessionId, @UserMessage String message);
 }
+```
+
+---
+
+## Expression Resolvers
+
+Annotation string attributes on `@RegisterAIService` and `@RegisterAgent` (such as `chatModelName`, `name`, `description`, `subAgentNames`, `outputKey`, and all `*Name` bean-lookup fields) can contain expressions that are resolved at runtime rather than hardcoded. This lets you externalise any bean name through configuration or compute it dynamically.
+
+Resolution is done via the `ExpressionResolver` SPI (`dev.langchain4j.cdi.spi.ExpressionResolver`). Implementations are discovered via `java.util.ServiceLoader` and applied as a pipeline: the output of each resolver feeds into the next.
+
+### MicroProfile Config Expressions — `${...}`
+
+When `langchain4j-cdi-config` is on the classpath, any attribute value matching `${property.key}` is resolved through MicroProfile Config:
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j.cdi</groupId>
+    <artifactId>langchain4j-cdi-config</artifactId>
+    <version>${langchain4j-cdi.version}</version>
+</dependency>
+```
+
+```java
+@RegisterAIService(chatModelName = "${my.chat.model.name}")
+public interface AssistantService {
+    String chat(String message);
+}
+```
+
+```properties
+# microprofile-config.properties (or application.properties in Quarkus)
+my.chat.model.name=chat-model
+```
+
+If the key is not found, the original `${property.key}` string is returned unchanged and a `FINE` log message is emitted so the problem is visible.
+
+### Jakarta EL Expressions — `#{...}`
+
+When `langchain4j-cdi-el` is on the classpath, any attribute value matching `#{expression}` is evaluated as a Jakarta Expression Language expression:
+
+```xml
+<dependency>
+    <groupId>dev.langchain4j.cdi</groupId>
+    <artifactId>langchain4j-cdi-el</artifactId>
+    <version>${langchain4j-cdi.version}</version>
+</dependency>
+```
+
+You also need a Jakarta EL runtime. In managed environments (WildFly, Payara, GlassFish, Liberty, Quarkus) one is already provided. In standalone or test scenarios add expressly explicitly:
+
+```xml
+<dependency>
+    <groupId>org.glassfish.expressly</groupId>
+    <artifactId>expressly</artifactId>
+    <version>5.0.0</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+```java
+// Conditional bean name
+@RegisterAIService(chatModelName = "#{config.useGpu ? 'gpu-model' : 'cpu-model'}")
+public interface SmartAssistant {
+    String chat(String message);
+}
+
+// Reference a CDI @Named bean property
+@RegisterAgent(name = "#{agentConfig.reviewerName}", chatModelName = "#default")
+public interface ReviewAgent {
+    @Agent String review(@V("text") String text);
+}
+```
+
+When CDI is active, `@Named` beans are accessible directly by name in EL expressions (e.g. `#{myConfig.propertyName}`). If EL evaluation fails for any reason, the original `#{...}` expression is returned unchanged and a `WARNING` is logged.
+
+### Using Both Together
+
+Both modules can coexist. The resolvers run in pipeline order: MP Config first, then Jakarta EL (or in whichever order `ServiceLoader` discovers them). The `${...}` and `#{...}` delimiters are distinct so there is no conflict.
+
+### Custom Expression Resolver
+
+Implement `ExpressionResolver` and register it via `ServiceLoader` to add your own syntax or resolution strategy:
+
+```java
+public class VaultExpressionResolver implements ExpressionResolver {
+
+    @Override
+    public String resolve(String value) {
+        if (!value.startsWith("vault:")) {
+            return value;
+        }
+        String secretPath = value.substring(6);
+        return VaultClient.readSecret(secretPath);
+    }
+}
+```
+
+Register in `META-INF/services/dev.langchain4j.cdi.spi.ExpressionResolver`:
+
+```
+com.example.VaultExpressionResolver
 ```
 
 ---

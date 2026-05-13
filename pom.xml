@@ -46,6 +46,8 @@
         <module>langchain4j-cdi-portable-ext</module>
         <module>langchain4j-cdi-build-compatible-ext</module>
         <module>langchain4j-cdi-core</module>
+        <module>langchain4j-cdi-a2a</module>
+        <module>langchain4j-cdi-el</module>
         <module>langchain4j-cdi-mp</module>
         <module>langchain4j-cdi-mcp</module>
     </modules>
@@ -66,8 +68,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.outputTimestamp>2026-03-31T09:54:21Z</project.build.outputTimestamp>
 
-        <dev.langchain4j.version>1.12.2</dev.langchain4j.version>
-        <dev.langchain4j.community.version>1.12.2-beta22</dev.langchain4j.community.version>
+        <dev.langchain4j.version>1.14.1</dev.langchain4j.version>
+        <dev.langchain4j.agentic.version>1.14.1-beta24</dev.langchain4j.agentic.version>
+        <dev.langchain4j.community.version>1.14.1-beta24</dev.langchain4j.community.version>
         <jakartaee-api.version>10.0.0</jakartaee-api.version>
         <jakarta.enterprise.cdi-api.version>4.0.1</jakarta.enterprise.cdi-api.version>
         <org.mcp-java.version>1.0.0-Beta1</org.mcp-java.version>
@@ -133,6 +136,16 @@
                 <version>${dev.langchain4j.version}</version>
             </dependency>
             <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-agentic</artifactId>
+                <version>${dev.langchain4j.agentic.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-agentic-a2a</artifactId>
+                <version>${dev.langchain4j.agentic.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>dev.langchain4j.cdi</groupId>
                 <artifactId>langchain4j-cdi-build-compatible-ext</artifactId>
                 <version>${project.version}</version>
@@ -140,6 +153,16 @@
             <dependency>
                 <groupId>dev.langchain4j.cdi</groupId>
                 <artifactId>langchain4j-cdi-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j.cdi</groupId>
+                <artifactId>langchain4j-cdi-a2a</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j.cdi</groupId>
+                <artifactId>langchain4j-cdi-el</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
