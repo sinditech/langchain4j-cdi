@@ -2,6 +2,7 @@ package dev.langchain4j.cdi.core.langchain4j.integrationtests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.langchain4j.cdi.integrationtests.AgentChatService;
 import io.helidon.microprofile.testing.junit5.HelidonTest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Entity;
@@ -16,9 +17,25 @@ public class HelidonIntegrationTest {
     @Inject
     WebTarget injectedTarget;
 
+    @Inject
+    AgentChatService agentChatService;
+
     @Test
     public void testChatRestService() {
         WebTarget target = injectedTarget.path("/chat");
+
+        String question = "What is the meaning of life?";
+        Response response =
+                target.request(MediaType.APPLICATION_JSON).post(Entity.entity(question, MediaType.APPLICATION_JSON));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        String result = response.readEntity(String.class);
+        assertThat(result).isNotNull().isEqualTo("ok");
+    }
+
+    @Test
+    public void testAgentChatRestService() {
+        WebTarget target = injectedTarget.path("/agent-chat");
 
         String question = "What is the meaning of life?";
         Response response =

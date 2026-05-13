@@ -376,13 +376,9 @@ class CommonAIServiceCreatorTest {
     }
 
     @Test
-    void getInstance_returnsNullWhenNameBlank() throws Exception {
-        var m = CommonAIServiceCreator.class.getDeclaredMethod(
-                "getInstance", Instance.class, Class.class, String.class);
-        m.setAccessible(true);
+    void getInstance_returnsNullWhenNameBlank() {
         @SuppressWarnings("unchecked")
         Instance<Object> lookup = mock(Instance.class);
-        Object res = m.invoke(null, lookup, ChatModel.class, "");
-        assertNull(res);
+        assertNull(CdiLookupHelper.getInstance(lookup, ChatModel.class, ""));
     }
 }

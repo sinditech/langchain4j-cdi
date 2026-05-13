@@ -1,0 +1,878 @@
+package dev.langchain4j.cdi.agent;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.internal.AgentExecutor;
+import dev.langchain4j.agentic.internal.InternalAgent;
+import dev.langchain4j.agentic.observability.AgentListener;
+import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
+import dev.langchain4j.cdi.spi.RegisterAgent;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.guardrail.InputGuardrail;
+import dev.langchain4j.guardrail.InputGuardrailResult;
+import dev.langchain4j.guardrail.OutputGuardrail;
+import dev.langchain4j.guardrail.OutputGuardrailResult;
+import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.memory.chat.ChatMemoryProvider;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.rag.RetrievalAugmentor;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
+import dev.langchain4j.service.V;
+import dev.langchain4j.service.tool.ToolProvider;
+import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.literal.NamedLiteral;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import org.junit.jupiter.api.Test;
+
+class CommonAgentCreatorTest {
+
+    // --- Tool classes ---
+    static class ToolAImpl {
+
+        public ToolAImpl() {}
+
+        @Tool
+        public String ping() {
+            return "pong";
+        }
+    }
+
+    // --- Guardrail classes ---
+    public static class TestInputGuardrail implements InputGuardrail {
+
+        @Override
+        public InputGuardrailResult validate(UserMessage userMessage) {
+            return success();
+        }
+    }
+
+    public static class TestOutputGuardrail implements OutputGuardrail {
+
+        @Override
+        public OutputGuardrailResult validate(AiMessage responseFromLLM) {
+            return success();
+        }
+    }
+
+    public static class UninstantiableGuardrail implements InputGuardrail {
+
+        public UninstantiableGuardrail(String required) {}
+
+        @Override
+        public InputGuardrailResult validate(UserMessage userMessage) {
+            return success();
+        }
+    }
+
+    // --- Test interfaces for SIMPLE topology (non-@Agent path) ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(chatModelName = "#default")
+    interface SimpleAgent {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(name = "myAgent", chatModelName = "#default")
+    interface NamedAgent {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(chatModelName = "#default")
+    interface AgentWithDoWork {
+
+        String doWork(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            chatMemoryName = "mem1",
+            retrievalAugmentorName = "ra1",
+            contentRetrieverName = "cr1")
+    interface AgentWithAllDeps {
+
+        String chat(@V("question") String question);
+    }
+
+    // --- Test interface for SIMPLE topology (@Agent path) ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(chatModelName = "#default")
+    interface AgenticAgent {
+
+        @Agent(description = "test agent")
+        String process(@V("input") String input);
+    }
+
+    // --- Tool resolution interfaces ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            toolProviderName = "tp1",
+            tools = {ToolAImpl.class},
+            chatModelName = "#default")
+    interface AgentWithToolProvider {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            tools = {ToolAImpl.class},
+            toolProviderName = "",
+            chatModelName = "#default")
+    interface AgentWithToolsArray {
+
+        String chat(@V("question") String question);
+    }
+
+    // --- Guardrail interfaces ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrails = {TestInputGuardrail.class},
+            outputGuardrails = {TestOutputGuardrail.class})
+    interface AgentWithGuardrails {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrailNames = {"myIG"},
+            outputGuardrailNames = {"myOG"})
+    interface AgentWithNamedGuardrails {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrails = {TestInputGuardrail.class},
+            inputGuardrailNames = {"shouldBeIgnored"})
+    interface AgentWithBothGuardrailConfigs {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrailNames = {"nonExistent"})
+    interface AgentWithUnresolvableNamedGuardrail {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrails = {TestInputGuardrail.class})
+    interface AgentWithGuardrailFallback {
+
+        String chat(@V("question") String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            chatModelName = "#default",
+            inputGuardrails = {UninstantiableGuardrail.class})
+    interface AgentWithUninstantiableGuardrail {
+
+        String chat(@V("question") String question);
+    }
+
+    // --- Expression-resolved interfaces ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(chatModelName = "${#default}")
+    interface ExpressionChatModelAgent {
+
+        String chat(@V("q") String q);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(name = "${myAgent}", chatModelName = "#default")
+    interface ExpressionNamedAgent {
+
+        String chat(@V("q") String q);
+    }
+
+    // --- A2A interfaces ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(topology = AgentTopologyType.A2A, a2aServerUrl = "")
+    interface A2AAgentBlankUrl {
+
+        String chat(String question);
+    }
+
+    // --- Test interfaces for composed topologies ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            topology = AgentTopologyType.SEQUENCE,
+            subAgentNames = {"stepA", "stepB"})
+    interface SequenceOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            topology = AgentTopologyType.LOOP,
+            subAgentNames = {"worker"},
+            maxIterations = 3)
+    interface LoopOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            topology = AgentTopologyType.PARALLEL,
+            subAgentNames = {"taskA", "taskB"})
+    interface ParallelOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            topology = AgentTopologyType.CONDITIONAL,
+            subAgentNames = {"branchA", "branchB"})
+    interface ConditionalOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(
+            topology = AgentTopologyType.SUPERVISOR,
+            chatModelName = "#default",
+            subAgentNames = {"workerAgent"},
+            maxAgentsInvocations = 5)
+    interface SupervisorOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    // Used to document that PLANNER without @PlannerSupplier leaves plannerSupplier=null,
+    // producing a NullPointerException when build() tries to eagerly call plannerSupplier.get().
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAgent(topology = AgentTopologyType.PLANNER)
+    interface PlannerOrchestratorWithoutSupplier {
+
+        String process(@V("input") String input);
+    }
+
+    // --- Missing annotation ---
+    interface PlainInterface {
+
+        String chat(String question);
+    }
+
+    // --- findEntryMethod test interfaces ---
+    interface SingleMethodInterface {
+
+        String doSomething();
+    }
+
+    interface MultiMethodInterface {
+
+        String first();
+
+        String second();
+    }
+
+    interface OnlyDefaultMethodsInterface {
+
+        default String hello() {
+            return "hello";
+        }
+    }
+
+    interface MixedMethodsInterface {
+
+        default String greeting() {
+            return "hi";
+        }
+
+        String process();
+    }
+
+    // =========================================================================
+    // Test helper
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    private static Instance<Object> prepareLookups() {
+        Instance<Object> lookup = mock(Instance.class);
+
+        Instance<ChatModel> cm = mock(Instance.class);
+        Instance<StreamingChatModel> scm = mock(Instance.class);
+        Instance<ContentRetriever> cr = mock(Instance.class);
+        Instance<RetrievalAugmentor> ra = mock(Instance.class);
+        Instance<ToolProvider> tp = mock(Instance.class);
+        Instance<ChatMemory> mem = mock(Instance.class);
+        Instance<ChatMemoryProvider> cmp = mock(Instance.class);
+        Instance<AgentListener> al = mock(Instance.class);
+
+        ChatModel cmBean = mock(ChatModel.class);
+        ContentRetriever crBean = mock(ContentRetriever.class);
+        RetrievalAugmentor raBean = mock(RetrievalAugmentor.class);
+        ChatMemory memBean = mock(ChatMemory.class);
+        ChatMemoryProvider cmpBean = mock(ChatMemoryProvider.class);
+
+        when(lookup.select(ChatModel.class)).thenReturn(cm);
+        when(lookup.select(ContentRetriever.class, NamedLiteral.of("cr1"))).thenReturn(cr);
+        when(lookup.select(RetrievalAugmentor.class, NamedLiteral.of("ra1"))).thenReturn(ra);
+        when(lookup.select(ChatMemory.class, NamedLiteral.of("mem1"))).thenReturn(mem);
+        when(lookup.select(ChatMemoryProvider.class, NamedLiteral.of("cmp1"))).thenReturn(cmp);
+
+        when(cm.isResolvable()).thenReturn(true);
+        when(scm.isResolvable()).thenReturn(false);
+        when(cr.isResolvable()).thenReturn(true);
+        when(ra.isResolvable()).thenReturn(true);
+        when(tp.isResolvable()).thenReturn(false);
+        when(mem.isResolvable()).thenReturn(true);
+        when(cmp.isResolvable()).thenReturn(true);
+        when(al.isResolvable()).thenReturn(false);
+
+        when(cm.get()).thenReturn(cmBean);
+        when(cr.get()).thenReturn(crBean);
+        when(ra.get()).thenReturn(raBean);
+        when(mem.get()).thenReturn(memBean);
+        when(cmp.get()).thenReturn(cmpBean);
+
+        return lookup;
+    }
+
+    /**
+     * Extends {@link #prepareLookups()} with CDI entries for named sub-agents. Each named bean resolves to a real
+     * {@link SimpleAgent} proxy so that {@link CommonAgentCreator#toAgentExecutor} can wrap it in a real
+     * {@link AgentExecutor} with a real invoker — as would happen at runtime.
+     */
+    @SuppressWarnings("unchecked")
+    private static Instance<Object> prepareLookupsWithSubAgents(String... agentNames) {
+        Instance<Object> lookup = prepareLookups();
+        SimpleAgent subAgentProxy = CommonAgentCreator.create(lookup, SimpleAgent.class);
+        for (String name : agentNames) {
+            Instance<Object> beanInstance = mock(Instance.class);
+            when(lookup.select(Object.class, NamedLiteral.of(name))).thenReturn(beanInstance);
+            when(beanInstance.isResolvable()).thenReturn(true);
+            when(beanInstance.get()).thenReturn(subAgentProxy);
+        }
+        return lookup;
+    }
+
+    // =========================================================================
+    // SIMPLE topology -- non-@Agent path
+    // =========================================================================
+    @Test
+    void create_simpleTopology_noAgentAnnotation_buildsNonAiProxy() {
+        Instance<Object> lookup = prepareLookups();
+        SimpleAgent agent = CommonAgentCreator.create(lookup, SimpleAgent.class);
+
+        assertNotNull(agent);
+        assertTrue(agent.toString().contains("Agent["));
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    @Test
+    void create_simpleTopology_usesAnnotationNameInToString() {
+        Instance<Object> lookup = prepareLookups();
+        NamedAgent agent = CommonAgentCreator.create(lookup, NamedAgent.class);
+
+        assertNotNull(agent);
+        assertTrue(agent.toString().contains("Agent[myAgent]"));
+    }
+
+    @Test
+    void create_simpleTopology_fallsBackToMethodNameWhenNameBlank() {
+        Instance<Object> lookup = prepareLookups();
+        AgentWithDoWork agent = CommonAgentCreator.create(lookup, AgentWithDoWork.class);
+
+        assertNotNull(agent);
+        assertTrue(agent.toString().contains("Agent[doWork]"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_simpleTopology_wiresAllResolvableDependencies() {
+        Instance<Object> lookup = prepareLookups();
+        AgentWithAllDeps agent = CommonAgentCreator.create(lookup, AgentWithAllDeps.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    // =========================================================================
+    // SIMPLE topology -- @Agent path
+    // =========================================================================
+    @Test
+    void create_simpleTopology_withAgentAnnotation_buildsAgenticProxy() {
+        Instance<Object> lookup = prepareLookups();
+        AgenticAgent agent = CommonAgentCreator.create(lookup, AgenticAgent.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    // =========================================================================
+    // Tool resolution
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_prefersToolProviderOverToolsArray() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<ToolProvider> tp = mock(Instance.class);
+        ToolProvider provider = mock(ToolProvider.class);
+        when(lookup.select(ToolProvider.class, NamedLiteral.of("tp1"))).thenReturn(tp);
+        when(tp.isResolvable()).thenReturn(true);
+        when(tp.get()).thenReturn(provider);
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolProvider.class);
+        assertNotNull(agent);
+    }
+
+    @Test
+    void create_fallsBackToToolsArrayWhenNoToolProvider() {
+        Instance<Object> lookup = prepareLookups();
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_toolFromCdiWhenResolvable() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<ToolAImpl> toolInstance = mock(Instance.class);
+        when(lookup.select(ToolAImpl.class)).thenReturn(toolInstance);
+        when(toolInstance.isResolvable()).thenReturn(true);
+        when(toolInstance.get()).thenReturn(new ToolAImpl());
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_toolFallsBackToConstructorWhenCdiUnresolvable() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<ToolAImpl> toolInstance = mock(Instance.class);
+        when(lookup.select(ToolAImpl.class)).thenReturn(toolInstance);
+        when(toolInstance.isResolvable()).thenReturn(false);
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
+        assertNotNull(agent);
+    }
+
+    // =========================================================================
+    // Guardrail wiring
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_wiresInputAndOutputGuardrailsFromClasses() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(true);
+        when(igInstance.get()).thenReturn(new TestInputGuardrail());
+
+        Instance<TestOutputGuardrail> ogInstance = mock(Instance.class);
+        when(lookup.select(TestOutputGuardrail.class)).thenReturn(ogInstance);
+        when(ogInstance.isResolvable()).thenReturn(true);
+        when(ogInstance.get()).thenReturn(new TestOutputGuardrail());
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithGuardrails.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_wiresNamedInputAndOutputGuardrails() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<InputGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(InputGuardrail.class, NamedLiteral.of("myIG"))).thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(true);
+        when(igInstance.get()).thenReturn(new TestInputGuardrail());
+
+        Instance<OutputGuardrail> ogInstance = mock(Instance.class);
+        when(lookup.select(OutputGuardrail.class, NamedLiteral.of("myOG"))).thenReturn(ogInstance);
+        when(ogInstance.isResolvable()).thenReturn(true);
+        when(ogInstance.get()).thenReturn(new TestOutputGuardrail());
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithNamedGuardrails.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_classGuardrailsTakePrecedenceOverNamedGuardrails() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(true);
+        when(igInstance.get()).thenReturn(new TestInputGuardrail());
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithBothGuardrailConfigs.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_skipsUnresolvableNamedGuardrails() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<InputGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(InputGuardrail.class, NamedLiteral.of("nonExistent")))
+                .thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(false);
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithUnresolvableNamedGuardrail.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_guardrailFallsBackToConstructorWhenCdiUnresolvable() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(false);
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithGuardrailFallback.class);
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_skipsGuardrailWhenBothCdiAndConstructorFail() {
+        Instance<Object> lookup = prepareLookups();
+
+        Instance<UninstantiableGuardrail> igInstance = mock(Instance.class);
+        when(lookup.select(UninstantiableGuardrail.class)).thenReturn(igInstance);
+        when(igInstance.isResolvable()).thenReturn(false);
+
+        Object agent = CommonAgentCreator.create(lookup, AgentWithUninstantiableGuardrail.class);
+        assertNotNull(agent);
+    }
+
+    // =========================================================================
+    // SEQUENCE topology
+    // =========================================================================
+    @Test
+    void create_sequenceTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("stepA", "stepB");
+        SequenceOrchestrator agent = CommonAgentCreator.create(lookup, SequenceOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("stepA"));
+        verify(lookup).select(Object.class, NamedLiteral.of("stepB"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_sequenceTopology_skipsUnresolvableSubAgent() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<Object> missingBean = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("stepA"))).thenReturn(missingBean);
+        when(lookup.select(Object.class, NamedLiteral.of("stepB"))).thenReturn(missingBean);
+        when(missingBean.isResolvable()).thenReturn(false);
+
+        SequenceOrchestrator agent = CommonAgentCreator.create(lookup, SequenceOrchestrator.class);
+        assertNotNull(agent);
+    }
+
+    // =========================================================================
+    // LOOP topology
+    // =========================================================================
+    @Test
+    void create_loopTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        LoopOrchestrator agent = CommonAgentCreator.create(lookup, LoopOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("worker"));
+    }
+
+    // =========================================================================
+    // PARALLEL topology
+    // =========================================================================
+    @Test
+    void create_parallelTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("taskA", "taskB");
+        ParallelOrchestrator agent = CommonAgentCreator.create(lookup, ParallelOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("taskA"));
+        verify(lookup).select(Object.class, NamedLiteral.of("taskB"));
+    }
+
+    // =========================================================================
+    // CONDITIONAL topology
+    // =========================================================================
+    @Test
+    void create_conditionalTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("branchA", "branchB");
+        ConditionalOrchestrator agent = CommonAgentCreator.create(lookup, ConditionalOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("branchA"));
+        verify(lookup).select(Object.class, NamedLiteral.of("branchB"));
+    }
+
+    // =========================================================================
+    // SUPERVISOR topology
+    // =========================================================================
+    @Test
+    void create_supervisorTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("workerAgent");
+        SupervisorOrchestrator agent = CommonAgentCreator.create(lookup, SupervisorOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("workerAgent"));
+    }
+
+    @Test
+    void create_supervisorTopology_resolvesChatModelFromCdi() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("workerAgent");
+        CommonAgentCreator.create(lookup, SupervisorOrchestrator.class);
+
+        // SUPERVISOR wires the ChatModel — verify the CDI lookup for the default bean was made.
+        // atLeastOnce() because prepareLookupsWithSubAgents internally creates a SimpleAgent proxy
+        // on the same lookup mock, which also resolves the default ChatModel once.
+        verify(lookup, atLeastOnce()).select(ChatModel.class);
+    }
+
+    // =========================================================================
+    // PLANNER topology
+    // =========================================================================
+    @Test
+    void create_plannerTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("plannerWorker");
+        // TestPlannerOrchestrator is a public top-level interface — required because
+        // DeclarativeUtil.invokeStatic(method) calls method.invoke(null) and the declaring
+        // class must be accessible from the langchain4j-agentic named module.
+        TestPlannerOrchestrator agent = CommonAgentCreator.create(lookup, TestPlannerOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("plannerWorker"));
+    }
+
+    @Test
+    void create_plannerTopology_throwsWhenPlannerSupplierMissing() {
+        // Without @PlannerSupplier, configurePlanner() leaves plannerSupplier=null.
+        // build() eagerly calls plannerSupplier.get() producing a NullPointerException.
+        Instance<Object> lookup = prepareLookups();
+        assertThrows(
+                NullPointerException.class,
+                () -> CommonAgentCreator.create(lookup, PlannerOrchestratorWithoutSupplier.class));
+    }
+
+    // =========================================================================
+    // A2A topology — requires langchain4j-cdi-a2a on classpath (not present in core tests)
+    // =========================================================================
+    @Test
+    void create_a2aTopology_throwsWhenSpiMissing() {
+        Instance<Object> lookup = prepareLookups();
+        IllegalStateException ex = assertThrows(
+                IllegalStateException.class, () -> CommonAgentCreator.create(lookup, A2AAgentBlankUrl.class));
+        assertTrue(ex.getMessage().contains("langchain4j-cdi-a2a"));
+    }
+
+    // =========================================================================
+    // Missing annotation
+    // =========================================================================
+    @Test
+    void create_throwsWhenAnnotationMissing() {
+        Instance<Object> lookup = prepareLookups();
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class, () -> CommonAgentCreator.create(lookup, PlainInterface.class));
+        assertTrue(ex.getMessage().contains("must be annotated with @RegisterAgent"));
+    }
+
+    // =========================================================================
+    // toAgentExecutor
+    // =========================================================================
+    @Test
+    void toAgentExecutor_alreadyAgentExecutor_returnsSame() {
+        AgentExecutor executor = mock(AgentExecutor.class);
+        Object result = CommonAgentCreator.toAgentExecutor(executor);
+        assertSame(executor, result);
+    }
+
+    @Test
+    void toAgentExecutor_withCdiProxy_returnsAgentExecutor() {
+        Instance<Object> lookup = prepareLookups();
+        SimpleAgent proxy = CommonAgentCreator.create(lookup, SimpleAgent.class);
+        assertInstanceOf(InternalAgent.class, proxy);
+
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
+        assertNotSame(proxy, result);
+    }
+
+    @Test
+    void toAgentExecutor_withNamedCdiProxy_usesAnnotationName() {
+        Instance<Object> lookup = prepareLookups();
+        NamedAgent proxy = CommonAgentCreator.create(lookup, NamedAgent.class);
+
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
+        // NamedAgent declares name = "myAgent" — the resulting AgentExecutor must use it
+        assertEquals("myAgent", ((InternalAgent) result).name());
+    }
+
+    @Test
+    void toAgentExecutor_withUnnamedCdiProxy_fallsBackToMethodName() {
+        Instance<Object> lookup = prepareLookups();
+        // SimpleAgent has no name set — should fall back to the entry method name "chat"
+        SimpleAgent proxy = CommonAgentCreator.create(lookup, SimpleAgent.class);
+
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
+        assertEquals("chat", ((InternalAgent) result).name());
+    }
+
+    // =========================================================================
+    // findEntryMethod (via reflection)
+    // =========================================================================
+    @Test
+    void findEntryMethod_singleAbstractMethod_returnsIt() throws Exception {
+        Method m = getFindEntryMethod();
+        Method result = (Method) m.invoke(null, SingleMethodInterface.class);
+        assertNotNull(result);
+        assertEquals("doSomething", result.getName());
+    }
+
+    @Test
+    void findEntryMethod_multipleAbstractMethods_throwsIllegalArgument() throws Exception {
+        Method m = getFindEntryMethod();
+        InvocationTargetException ex =
+                assertThrows(InvocationTargetException.class, () -> m.invoke(null, MultiMethodInterface.class));
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
+        assertTrue(ex.getCause().getMessage().contains("must declare exactly one abstract method"));
+    }
+
+    @Test
+    void findEntryMethod_onlyDefaultMethods_returnsNull() throws Exception {
+        Method m = getFindEntryMethod();
+        Method result = (Method) m.invoke(null, OnlyDefaultMethodsInterface.class);
+        assertNull(result);
+    }
+
+    @Test
+    void findEntryMethod_mixedMethods_skipsDefaultReturnsAbstract() throws Exception {
+        Method m = getFindEntryMethod();
+        Method result = (Method) m.invoke(null, MixedMethodsInterface.class);
+        assertNotNull(result);
+        assertEquals("process", result.getName());
+    }
+
+    // =========================================================================
+    // CdiLookupHelper.getInstance
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    @Test
+    void getInstance_returnsNullWhenNameBlank() {
+        Instance<Object> lookup = mock(Instance.class);
+        assertNull(CdiLookupHelper.getInstance(lookup, ChatModel.class, ""));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void getInstance_returnsNullWhenNameNull() {
+        Instance<Object> lookup = mock(Instance.class);
+        assertNull(CdiLookupHelper.getInstance(lookup, ChatModel.class, null));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void getInstance_returnsDefaultBeanWhenNameIsHashDefault() {
+        Instance<Object> lookup = mock(Instance.class);
+        Instance<ChatModel> cmInstance = mock(Instance.class);
+        when(lookup.select(ChatModel.class)).thenReturn(cmInstance);
+
+        assertSame(cmInstance, CdiLookupHelper.getInstance(lookup, ChatModel.class, "#default"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void getInstance_returnsNamedBeanWhenNameSpecific() {
+        Instance<Object> lookup = mock(Instance.class);
+        Instance<ChatModel> cmInstance = mock(Instance.class);
+        when(lookup.select(ChatModel.class, NamedLiteral.of("myModel"))).thenReturn(cmInstance);
+
+        assertSame(cmInstance, CdiLookupHelper.getInstance(lookup, ChatModel.class, "myModel"));
+    }
+
+    // =========================================================================
+    // ExpressionResolver SPI — CdiLookupHelper.resolveExpression
+    // =========================================================================
+    @Test
+    void resolveExpression_passesThroughPlainString() {
+        // Plain names must not be altered by the test resolver (no ${} delimiters)
+        assertEquals("plainValue", CdiLookupHelper.resolveExpression("plainValue"));
+        assertEquals("#default", CdiLookupHelper.resolveExpression("#default"));
+        assertEquals("mem1", CdiLookupHelper.resolveExpression("mem1"));
+    }
+
+    @Test
+    void resolveExpression_returnsNullWhenNull() {
+        assertNull(CdiLookupHelper.resolveExpression(null));
+    }
+
+    @Test
+    void resolveExpression_returnsBlankWhenBlank() {
+        assertEquals("", CdiLookupHelper.resolveExpression(""));
+    }
+
+    @Test
+    void resolveExpression_stripsDelimitersViaTestResolver() {
+        // TestExpressionResolver (registered in test META-INF/services) strips ${...}
+        assertEquals("#default", CdiLookupHelper.resolveExpression("${#default}"));
+        assertEquals("mem1", CdiLookupHelper.resolveExpression("${mem1}"));
+        assertEquals("myAgent", CdiLookupHelper.resolveExpression("${myAgent}"));
+    }
+
+    @Test
+    void create_resolvesExpressionInChatModelName() {
+        // ${#default} resolves to #default via TestExpressionResolver
+        Instance<Object> lookup = prepareLookups();
+        ExpressionChatModelAgent agent = CommonAgentCreator.create(lookup, ExpressionChatModelAgent.class);
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    @Test
+    void create_resolvesExpressionInName() {
+        // ${myAgent} resolves to myAgent via TestExpressionResolver
+        Instance<Object> lookup = prepareLookups();
+        ExpressionNamedAgent agent = CommonAgentCreator.create(lookup, ExpressionNamedAgent.class);
+        assertNotNull(agent);
+        assertTrue(agent.toString().contains("Agent[myAgent]"));
+    }
+
+    // =========================================================================
+    // Reflection helpers
+    // =========================================================================
+    private static Method getFindEntryMethod() throws Exception {
+        Method m = CommonAgentCreator.class.getDeclaredMethod("findEntryMethod", Class.class);
+        m.setAccessible(true);
+        return m;
+    }
+}

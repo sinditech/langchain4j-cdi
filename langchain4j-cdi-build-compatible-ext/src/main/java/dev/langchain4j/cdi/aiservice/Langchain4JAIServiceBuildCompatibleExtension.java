@@ -1,6 +1,9 @@
 package dev.langchain4j.cdi.aiservice;
 
+import dev.langchain4j.agentic.internal.InternalAgent;
+import dev.langchain4j.cdi.agent.CommonAgentCreator;
 import dev.langchain4j.cdi.spi.RegisterAIService;
+import dev.langchain4j.cdi.spi.RegisterAgent;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension;
 import jakarta.enterprise.inject.build.compatible.spi.ClassConfig;
@@ -24,11 +27,17 @@ import java.util.stream.Collectors;
 public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompatibleExtension {
     private static final Logger LOGGER = Logger.getLogger(Langchain4JAIServiceBuildCompatibleExtension.class.getName());
     private static final Set<Class<?>> detectedAIServicesDeclaredInterfaces = new HashSet<>();
+    private static final Set<Class<?>> detectedAgentDeclaredInterfaces = new HashSet<>();
     private static final Set<String> detectedTools = new HashSet<>();
     public static final String PARAM_INTERFACE_CLASS = "interfaceClass";
+    public static final String PARAM_AGENT_INTERFACE_CLASS = "agentInterfaceClass";
 
     public static Set<Class<?>> getDetectedAIServicesDeclaredInterfaces() {
         return detectedAIServicesDeclaredInterfaces;
+    }
+
+    public static Set<Class<?>> getDetectedAgentDeclaredInterfaces() {
+        return detectedAgentDeclaredInterfaces;
     }
 
     @SuppressWarnings("unused")
@@ -68,7 +77,19 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
             if (annotationInfo != null) {
                 registerAIService(classInfo);
             }
+            AnnotationInfo agentAnnotationInfo = classInfo.annotation(RegisterAgent.class);
+            if (agentAnnotationInfo != null) {
+                registerAgent(classInfo);
+            }
         }
+    }
+
+    @SuppressWarnings("unused")
+    @Enhancement(types = Object.class, withAnnotations = RegisterAgent.class, withSubtypes = true)
+    @Priority(11)
+    public void detectRegisterAgent(ClassConfig classConfig) throws ClassNotFoundException {
+        ClassInfo classInfo = classConfig.info();
+        registerAgent(classInfo);
     }
 
     private void registerAIService(ClassInfo classInfo) throws ClassNotFoundException {
@@ -89,6 +110,23 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
         }
     }
 
+    private void registerAgent(ClassInfo classInfo) throws ClassNotFoundException {
+        if (classInfo.isInterface()) {
+            String className = classInfo.name();
+            Class<?> interfaceClass = getLoadClass(className);
+            if (!detectedAgentDeclaredInterfaces.contains(interfaceClass)) {
+                LOGGER.info("RegisterAgent of type " + classInfo.name());
+                detectedAgentDeclaredInterfaces.add(interfaceClass);
+            }
+
+            RegisterAgent annotation = interfaceClass.getAnnotation(RegisterAgent.class);
+            detectedTools.addAll(
+                    Arrays.stream(annotation.tools()).map(Class::getName).collect(Collectors.toList()));
+        } else {
+            LOGGER.warning("The class is Annotated with @RegisterAgent, but only interface are allowed" + classInfo);
+        }
+    }
+
     private static Class<?> getLoadClass(String className) throws ClassNotFoundException {
         return Thread.currentThread().getContextClassLoader().loadClass(className);
     }
@@ -99,11 +137,8 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
         LOGGER.info("synthesisAllRegisterAIServices");
 
         for (Class<?> interfaceClass : detectedAIServicesDeclaredInterfaces) {
-            LOGGER.info("Create synthetic " + interfaceClass);
+            LOGGER.info("Create synthetic AI service " + interfaceClass);
             RegisterAIService annotation = interfaceClass.getAnnotation(RegisterAIService.class);
-
-            detectedTools.addAll(
-                    Arrays.stream(annotation.tools()).map(Class::getName).collect(Collectors.toSet()));
 
             SyntheticBeanBuilder<Object> builder =
                     (SyntheticBeanBuilder<Object>) syntheticComponents.addBean(interfaceClass);
@@ -113,6 +148,27 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
                     .scope(annotation.scope())
                     .name("registeredAIService-" + interfaceClass.getName())
                     .withParam(PARAM_INTERFACE_CLASS, interfaceClass);
+        }
+
+        for (Class<?> interfaceClass : detectedAgentDeclaredInterfaces) {
+            LOGGER.info("Create synthetic agent " + interfaceClass);
+            RegisterAgent annotation = interfaceClass.getAnnotation(RegisterAgent.class);
+
+            SyntheticBeanBuilder<Object> builder =
+                    (SyntheticBeanBuilder<Object>) syntheticComponents.addBean(interfaceClass);
+
+            String agentName = CdiLookupHelper.resolveExpression(annotation.name());
+            String beanName = (agentName != null && !agentName.isBlank())
+                    ? agentName
+                    : CommonAgentCreator.AGENT_BEAN_NAME_PREFIX + interfaceClass.getName();
+
+            builder.createWith(AIAgentCreator.class)
+                    .type(interfaceClass)
+                    .type(InternalAgent.class)
+                    .type(Object.class)
+                    .scope(annotation.scope())
+                    .name(beanName)
+                    .withParam(PARAM_AGENT_INTERFACE_CLASS, interfaceClass);
         }
     }
 }
