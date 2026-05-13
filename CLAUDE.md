@@ -54,8 +54,13 @@ mvn spotless:apply -pl '!examples/payara-car-booking'
 **langchain4j-cdi-core**: Foundation of the CDI integration
 - `@RegisterAIService` stereotype annotation for declaring AI service interfaces
 - `CommonAIServiceCreator` utility for building AI service proxies from CDI beans
+- `@RegisterAgent` stereotype annotation for declaring agentic system interfaces
+- `CommonAgentCreator` utility for building agent proxies across all 8 topologies (SIMPLE, SEQUENCE, LOOP, PARALLEL, CONDITIONAL, SUPERVISOR, PLANNER, A2A)
+- `AgentTopologyType` enum defining available orchestration patterns
+- `A2AAgentBuilder` SPI for pluggable A2A topology implementation (loaded via `ServiceLoader`)
 - `LLMConfig` and `LLMConfigProvider` configuration API and SPI
 - `CommonLLMPluginCreator` for creating LangChain4j components via reflection
+- `ExpressionResolver` SPI for pluggable annotation attribute expression resolution
 
 **langchain4j-cdi-portable-ext**: Portable CDI extension for runtime service registration
 - Works with traditional Jakarta EE servers (WildFly, GlassFish, Liberty, Payara)
@@ -71,6 +76,12 @@ mvn spotless:apply -pl '!examples/payara-car-booking'
 - Uses `jakarta.el.ELProcessor`; wires CDI bean resolution when CDI is active
 - Discovered automatically via `ServiceLoader` when on the classpath
 - Requires a Jakarta EL implementation at runtime (e.g. `org.glassfish.expressly:expressly`)
+
+**langchain4j-cdi-a2a**: A2A (Agent-to-Agent) topology CDI wiring
+- Implements the `A2AAgentBuilder` SPI from `langchain4j-cdi-core`
+- Loaded via `ServiceLoader` when A2A topology is used — optional module
+- Wires `a2aServerUrl`, `outputKey`, `async`, and `agentListenerName` for A2A agents
+- Requires `langchain4j-agentic-a2a` on the classpath for the A2A protocol implementation
 
 ### MicroProfile Integration Modules (langchain4j-cdi-mp)
 
@@ -123,9 +134,9 @@ Resolution is performed by the `ExpressionResolver` SPI (`dev.langchain4j.cdi.sp
 Components can be created from configuration properties:
 
 ```properties
-dev.langchain4j.plugin.<bean-name>.class=fully.qualified.ClassName
-dev.langchain4j.plugin.<bean-name>.scope=jakarta.enterprise.context.ApplicationScoped
-dev.langchain4j.plugin.<bean-name>.config.<property>=value
+dev.langchain4j.cdi.plugin.<bean-name>.class=fully.qualified.ClassName
+dev.langchain4j.cdi.plugin.<bean-name>.scope=jakarta.enterprise.context.ApplicationScoped
+dev.langchain4j.cdi.plugin.<bean-name>.config.<property>=value
 ```
 
 **Special lookup values:**
