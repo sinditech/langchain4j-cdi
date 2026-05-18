@@ -1,7 +1,18 @@
 package dev.langchain4j.cdi.core.portableextension;
 
+import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
+import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterAIService;
-import dev.langchain4j.cdi.spi.RegisterAgent;
+import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
+import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterMcpClientAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelMapperAgent;
+import dev.langchain4j.cdi.spi.RegisterPlannerAgent;
+import dev.langchain4j.cdi.spi.RegisterSequenceAgent;
+import dev.langchain4j.cdi.spi.RegisterSimpleAgent;
+import dev.langchain4j.cdi.spi.RegisterSupervisorAgent;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.spi.AfterBeanDiscovery;
@@ -52,7 +63,22 @@ public class LangChain4JAIServicePortableExtension implements Extension {
         }
     }
 
-    <T> void processAgentAnnotatedType(@Observes @WithAnnotations({RegisterAgent.class}) ProcessAnnotatedType<T> pat) {
+    <T> void processAgentAnnotatedType(
+            @Observes
+                    @WithAnnotations({
+                        RegisterSimpleAgent.class,
+                        RegisterSequenceAgent.class,
+                        RegisterLoopAgent.class,
+                        RegisterParallelAgent.class,
+                        RegisterParallelMapperAgent.class,
+                        RegisterConditionalAgent.class,
+                        RegisterSupervisorAgent.class,
+                        RegisterPlannerAgent.class,
+                        RegisterA2AAgent.class,
+                        RegisterMcpClientAgent.class,
+                        RegisterHumanInTheLoopAgent.class
+                    })
+                    ProcessAnnotatedType<T> pat) {
         if (pat.getAnnotatedType().getJavaClass().isInterface()) {
             LOGGER.info("processAnnotatedType register agent "
                     + pat.getAnnotatedType().getJavaClass().getName());
@@ -73,7 +99,7 @@ public class LangChain4JAIServicePortableExtension implements Extension {
         if (event.getInjectionPoint().getBean() == null) {
             Class<?> rawType = Reflections.getRawType(event.getInjectionPoint().getType());
             if (classSatisfies(rawType, RegisterAIService.class)) detectedAIServicesDeclaredInterfaces.add(rawType);
-            if (classSatisfies(rawType, RegisterAgent.class)) detectedAgentDeclaredInterfaces.add(rawType);
+            if (AgentAnnotationMeta.isAgentInterface(rawType)) detectedAgentDeclaredInterfaces.add(rawType);
         }
 
         if (Instance.class.equals(
@@ -81,7 +107,7 @@ public class LangChain4JAIServicePortableExtension implements Extension {
             Class<?> parameterizedType = Reflections.getRawType(getFacadeType(event.getInjectionPoint()));
             if (classSatisfies(parameterizedType, RegisterAIService.class))
                 detectedAIServicesDeclaredInterfaces.add(parameterizedType);
-            if (classSatisfies(parameterizedType, RegisterAgent.class))
+            if (AgentAnnotationMeta.isAgentInterface(parameterizedType))
                 detectedAgentDeclaredInterfaces.add(parameterizedType);
         }
     }

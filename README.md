@@ -37,7 +37,7 @@ Enterprise CDI extension for LangChain4j - inject AI services directly into your
 This project provides seamless integration between [LangChain4j](https://docs.langchain4j.dev/) and CDI (Contexts and Dependency Injection), enabling you to:
 
 - **Inject AI services** as CDI beans using `@RegisterAIService`
-- **Build agentic systems** with `@RegisterAgent` for multi-agent workflows (sequences, loops, supervisors, A2A)
+- **Build agentic systems** with per-topology annotations (`@RegisterSimpleAgent`, `@RegisterSequenceAgent`, etc.) for multi-agent workflows (sequences, loops, supervisors, A2A)
 - **Configure LLM components** via properties (can use microprofile configuration adapter or provide your own)
 - **Add resilience** with MicroProfile Fault Tolerance (`@Retry`, `@Timeout`, `@CircuitBreaker`)
 - **Monitor AI operations** with MicroProfile Telemetry/OpenTelemetry
@@ -218,7 +218,7 @@ public class AssistantResource {
 | `langchain4j-cdi-a2a` | CDI wiring for the A2A (Agent-to-Agent) topology |
 | `langchain4j-cdi-fault-tolerance` | MicroProfile Fault Tolerance support |
 | `langchain4j-cdi-telemetry` | OpenTelemetry metrics for AI operations |
-| `langchain4j-agentic` | LangChain4j agentic framework (required for `@RegisterAgent`) |
+| `langchain4j-agentic` | LangChain4j agentic framework (required for agentic topologies) |
 | `langchain4j-agentic-a2a` | A2A protocol support (required for A2A topology) |
 
 ### Optional MicroProfile Modules
@@ -766,16 +766,15 @@ public class MessageLengthGuardrail implements InputGuardrail {
 
 ## Agent Registration
 
-The `@RegisterAgent` annotation enables declarative registration of [LangChain4j Agentic](https://docs.langchain4j.dev/tutorials/agentic) systems as CDI beans. Eight topologies are supported: **SIMPLE, SEQUENCE, LOOP, PARALLEL, CONDITIONAL, SUPERVISOR, PLANNER**, and **A2A** (Agent-to-Agent over HTTP).
+Each agentic topology has a dedicated CDI stereotype annotation. The 11 supported topologies are: **SIMPLE, SEQUENCE, LOOP, PARALLEL, PARALLEL_MAPPER, CONDITIONAL, SUPERVISOR, PLANNER, A2A** (Agent-to-Agent over HTTP), **MCP_CLIENT**, and **HUMAN_IN_THE_LOOP**.
 
-For full documentation including the complete attribute reference, topology-attribute compatibility table, and the A2A SPI, see **[langchain4j-cdi-a2a/README.md](langchain4j-cdi-a2a/README.md)**.
+For full documentation including the attribute reference for each annotation and the A2A SPI, see **[langchain4j-cdi-a2a/README.md](langchain4j-cdi-a2a/README.md)**.
 
 ### Quick Example
 
 ```java
-@RegisterAgent(
+@RegisterSequenceAgent(
     name = "content-pipeline",
-    topology = AgentTopologyType.SEQUENCE,
     subAgentNames = {"researcher", "writer", "reviewer"},
     outputKey = "final-content")
 public interface ContentPipeline {
@@ -995,7 +994,7 @@ public interface UserChatBot {
 
 ## Expression Resolvers
 
-Annotation string attributes on `@RegisterAIService` and `@RegisterAgent` can contain expressions resolved at runtime:
+Annotation string attributes on `@RegisterAIService` and agent stereotype annotations can contain expressions resolved at runtime:
 
 | Syntax | Module | Description |
 |--------|--------|-------------|

@@ -130,6 +130,26 @@ public final class CdiLookupHelper {
     }
 
     /**
+     * Resolve tool instances by named CDI bean lookup. Names that cannot be resolved are skipped with a WARNING log.
+     */
+    public static List<Object> resolveToolsByName(String[] toolNames, Instance<Object> lookup) {
+        List<Object> tools = new ArrayList<>(toolNames.length);
+        for (String name : toolNames) {
+            String resolved = resolveExpression(name);
+            if (!hasText(resolved)) {
+                continue;
+            }
+            Instance<Object> instance = lookup.select(Object.class, NamedLiteral.of(resolved));
+            if (instance.isResolvable()) {
+                tools.add(instance.get());
+            } else {
+                LOGGER.log(Level.WARNING, "Named tool ''{0}'' is not resolvable, skipping", resolved);
+            }
+        }
+        return tools;
+    }
+
+    /**
      * Resolve tool instances from an array of tool classes. For each class, first attempts CDI lookup; if the bean is
      * not resolvable, falls back to instantiation via the no-arg constructor. Classes that fail both resolution paths
      * are skipped with a SEVERE log.

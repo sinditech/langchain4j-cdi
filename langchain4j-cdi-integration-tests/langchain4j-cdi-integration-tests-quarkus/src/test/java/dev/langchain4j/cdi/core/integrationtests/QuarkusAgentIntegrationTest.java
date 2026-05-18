@@ -13,8 +13,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 /**
- * Integration tests verifying that {@code @RegisterAgent} beans are correctly created and invokable through the
- * build-compatible extension path used by Quarkus.
+ * Integration tests verifying that agent beans are correctly created and invokable through the build-compatible
+ * extension path used by Quarkus.
  */
 @QuarkusTest
 public class QuarkusAgentIntegrationTest {

@@ -1,8 +1,8 @@
 package dev.langchain4j.cdi.spi;
 
 /**
- * SPI for resolving expression strings embedded in {@link RegisterAgent} and {@link RegisterAIService} annotation
- * attributes. Implementations are discovered via {@link java.util.ServiceLoader}.
+ * SPI for resolving expression strings embedded in agent and AI-service stereotype annotation attributes.
+ * Implementations are discovered via {@link java.util.ServiceLoader}.
  *
  * <p>Implementations should resolve expressions embedded in string values — for example, MicroProfile Config
  * expressions like {@code ${my.property}} or system-property references. Strings that contain no expression must be
