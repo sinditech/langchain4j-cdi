@@ -139,6 +139,30 @@ class CommonAIServiceCreatorTest {
         assertNotNull(service);
     }
 
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterAIService(
+            toolProviderName = "provider1",
+            tools = {ToolAImpl.class})
+    interface MyAIServiceWithBothToolProviderAndToolsArray {
+        String chat(String question);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_wiresToolProviderAndToolsArraySimultaneously() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<ToolProvider> tp = mock(Instance.class);
+        ToolProvider provider = mock(ToolProvider.class);
+        when(lookup.select(ToolProvider.class, NamedLiteral.of("provider1"))).thenReturn(tp);
+        when(tp.isResolvable()).thenReturn(true);
+        when(tp.get()).thenReturn(provider);
+
+        // Both toolProvider and tools[] are set; service creation must succeed
+        Object service = CommonAIServiceCreator.create(lookup, MyAIServiceWithBothToolProviderAndToolsArray.class);
+        assertNotNull(service);
+        assertTrue(service.toString().contains("MyAIServiceWithBothToolProviderAndToolsArray"));
+    }
+
     // --- Guardrail test classes ---
 
     public static class TestInputGuardrail implements InputGuardrail {

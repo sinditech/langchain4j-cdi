@@ -25,6 +25,12 @@ public @interface RegisterAIService {
 
     Class<? extends Annotation> scope() default RequestScoped.class;
 
+    /**
+     * Tool classes to wire into the AI service. Each class is resolved as a CDI bean when possible, or instantiated via
+     * its no-arg constructor otherwise. Can be used together with {@link #toolProviderName()}: both are applied when
+     * present. Avoid overlapping tool names across the two sources — LangChain4j will throw
+     * {@code IllegalConfigurationException} at runtime if the same tool name appears more than once.
+     */
     Class<?>[] tools() default {};
 
     String chatModelName() default "#default";
@@ -41,6 +47,12 @@ public @interface RegisterAIService {
 
     String retrievalAugmentorName() default "";
 
+    /**
+     * Name of a CDI {@link dev.langchain4j.service.tool.ToolProvider} bean to wire into the AI service. Can be used
+     * together with {@link #tools()}: both are applied when present. Avoid overlapping tool names across the two
+     * sources — LangChain4j will throw {@code IllegalConfigurationException} at runtime if the same tool name appears
+     * more than once. Blank means no {@code ToolProvider} is wired.
+     */
     String toolProviderName() default "";
 
     /**

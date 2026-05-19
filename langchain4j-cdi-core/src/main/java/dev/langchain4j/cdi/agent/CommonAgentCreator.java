@@ -539,9 +539,14 @@ public class CommonAgentCreator {
         static AgentComponents resolve(RegisterSimpleAgent ann, Instance<Object> lookup, String interfaceName) {
             ToolProvider toolProvider =
                     CdiLookupHelper.resolveSingle(lookup, ToolProvider.class, ann.toolProviderName());
-            List<Object> tools = toolProvider == null && ann.toolNames().length > 0
+            List<Object> tools = ann.toolNames().length > 0
                     ? CdiLookupHelper.resolveToolsByName(ann.toolNames(), lookup)
                     : List.of();
+            if (toolProvider != null && !tools.isEmpty()) {
+                LOGGER.warning("Both toolProviderName and toolNames[] are configured on "
+                        + interfaceName
+                        + "; overlapping tool names will cause IllegalConfigurationException at runtime.");
+            }
             ChatMemory chatMemory = CdiLookupHelper.resolveSingle(lookup, ChatMemory.class, ann.chatMemoryName());
             ChatMemoryProvider chatMemoryProvider =
                     CdiLookupHelper.resolveSingle(lookup, ChatMemoryProvider.class, ann.chatMemoryProviderName());
@@ -568,7 +573,8 @@ public class CommonAgentCreator {
         void applyTo(AiServices<?> builder) {
             if (toolProvider != null) {
                 builder.toolProvider(toolProvider);
-            } else if (!tools.isEmpty()) {
+            }
+            if (!tools.isEmpty()) {
                 builder.tools(tools);
             }
             if (chatMemory != null) {
@@ -594,7 +600,8 @@ public class CommonAgentCreator {
         void applyTo(AgentBuilder<?, ?> builder) {
             if (toolProvider != null) {
                 builder.toolProvider(toolProvider);
-            } else if (!tools.isEmpty()) {
+            }
+            if (!tools.isEmpty()) {
                 builder.tools(tools.toArray(new Object[0]));
             }
             if (chatMemory != null) {

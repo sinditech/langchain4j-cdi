@@ -21,9 +21,9 @@ import java.util.logging.Logger;
  *
  * <p>The method create() inspects the provided service interface for @RegisterAIService and tries to resolve optional
  * collaborating beans from the CDI container (by name or default): - ChatModel or StreamingChatModel - ContentRetriever
- * or RetrievalAugmentor (RetrievalAugmentor has priority) - ToolProvider, or if missing, instantiate tools classes
- * declared in the annotation via no-arg constructors - ChatMemory or ChatMemoryProvider - ModerationModel -
- * InputGuardrails and OutputGuardrails (by class or named CDI beans)
+ * or RetrievalAugmentor (RetrievalAugmentor has priority) - ToolProvider and tools[] classes declared in the annotation
+ * (both are applied when present; avoid overlapping tool names as LangChain4j will throw at runtime) - ChatMemory or
+ * ChatMemoryProvider - ModerationModel - InputGuardrails and OutputGuardrails (by class or named CDI beans)
  *
  * <p>Only the components that are resolvable are wired into the AiServices builder.
  */
@@ -78,8 +78,15 @@ public class CommonAIServiceCreator {
         if (toolProvider != null && toolProvider.isResolvable()) {
             LOGGER.fine("ToolProvider " + toolProvider.get());
             builder.toolProvider(toolProvider.get());
-        } else if (annotation.tools().length > 0) {
+        }
+        if (annotation.tools().length > 0) {
             List<Object> tools = CdiLookupHelper.resolveToolInstances(annotation.tools(), lookup);
+            if (toolProvider != null && toolProvider.isResolvable()) {
+                LOGGER.warning("Both toolProviderName and tools[] are configured on "
+                        + interfaceClass.getSimpleName()
+                        + "; overlapping tool names will cause IllegalConfigurationException at runtime.");
+            }
+            LOGGER.fine("Tools " + tools);
             builder.tools(tools);
         }
         Instance<ChatMemory> chatMemory =
