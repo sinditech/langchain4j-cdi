@@ -4,7 +4,7 @@ import static org.mockito.Mockito.mock;
 
 import dev.langchain4j.agentic.declarative.PlannerSupplier;
 import dev.langchain4j.agentic.planner.Planner;
-import dev.langchain4j.cdi.spi.RegisterAgent;
+import dev.langchain4j.cdi.spi.RegisterPlannerAgent;
 import dev.langchain4j.service.V;
 
 /**
@@ -13,9 +13,7 @@ import dev.langchain4j.service.V;
  * type accessible from the {@code langchain4j-agentic} named module.
  */
 @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-@RegisterAgent(
-        topology = AgentTopologyType.PLANNER,
-        subAgentNames = {"plannerWorker"})
+@RegisterPlannerAgent(subAgentNames = {"plannerWorker"})
 public interface TestPlannerOrchestrator {
 
     String process(@V("input") String input);

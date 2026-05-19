@@ -5,26 +5,30 @@ import dev.langchain4j.agentic.internal.A2AClientBuilder;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.cdi.agent.spi.A2AAgentBuilder;
 import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
-import dev.langchain4j.cdi.spi.RegisterAgent;
 import jakarta.enterprise.inject.Instance;
 
 public class DefaultA2AAgentBuilder implements A2AAgentBuilder {
 
     @Override
-    public <X> X build(Class<X> interfaceClass, RegisterAgent annotation, Instance<Object> lookup) {
-        String url = CdiLookupHelper.resolveExpression(annotation.a2aServerUrl());
+    public <X> X build(
+            Class<X> interfaceClass,
+            String url,
+            String outputKey,
+            boolean async,
+            String agentListenerName,
+            Instance<Object> lookup) {
+        // Defensive: createForA2A already validates the URL before calling this builder,
+        // but guard here so the SPI contract is self-contained for any external implementors.
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException(
-                    "A2A topology requires a non-empty a2aServerUrl on @RegisterAgent for " + interfaceClass.getName());
+                    "@RegisterA2AAgent on " + interfaceClass.getSimpleName() + ": 'a2aServerUrl' is required.");
         }
         A2AClientBuilder<X> builder = AgenticServices.a2aBuilder(url, interfaceClass);
-        String outputKey = CdiLookupHelper.resolveExpression(annotation.outputKey());
         if (outputKey != null && !outputKey.isBlank()) {
             builder.outputKey(outputKey);
         }
-        builder.async(annotation.async());
-        AgentListener listener =
-                CdiLookupHelper.resolveSingle(lookup, AgentListener.class, annotation.agentListenerName());
+        builder.async(async);
+        AgentListener listener = CdiLookupHelper.resolveSingle(lookup, AgentListener.class, agentListenerName);
         if (listener != null) {
             builder.listener(listener);
         }

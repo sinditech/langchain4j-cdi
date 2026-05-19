@@ -1,9 +1,9 @@
 package dev.langchain4j.cdi.core.portableextension;
 
 import dev.langchain4j.agentic.internal.InternalAgent;
+import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.agent.CommonAgentCreator;
 import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
-import dev.langchain4j.cdi.spi.RegisterAgent;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Default;
@@ -27,16 +27,19 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
     private final BeanManager beanManager;
     private final Class<? extends Annotation> scope;
     private final String agentName;
+    private final Class<? extends Annotation> stereotypeAnnotationClass;
     private Set<Annotation> interceptorBindings;
 
     public LangChain4JAIAgentBean(Class<T> agentInterfaceClass, BeanManager beanManager) {
         super();
-        final RegisterAgent annotation =
-                (this.agentInterfaceClass = agentInterfaceClass).getAnnotation(RegisterAgent.class);
-        this.scope = annotation.scope();
-        String resolvedName = CdiLookupHelper.resolveExpression(annotation.name());
+        this.agentInterfaceClass = agentInterfaceClass;
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(agentInterfaceClass);
+        this.scope = meta != null ? meta.scope() : jakarta.enterprise.context.ApplicationScoped.class;
+        String resolvedName = meta != null ? CdiLookupHelper.resolveExpression(meta.rawName()) : null;
         this.agentName = (resolvedName != null && !resolvedName.isBlank()) ? resolvedName : null;
         this.beanManager = beanManager;
+        this.stereotypeAnnotationClass =
+                meta != null ? meta.annotationClass() : dev.langchain4j.cdi.spi.RegisterSimpleAgent.class;
     }
 
     @Override
@@ -98,7 +101,7 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
 
     @Override
     public Set<Class<? extends Annotation>> getStereotypes() {
-        return Collections.singleton(RegisterAgent.class);
+        return Collections.singleton(stereotypeAnnotationClass);
     }
 
     @Override

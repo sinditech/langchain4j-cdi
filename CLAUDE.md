@@ -54,8 +54,8 @@ mvn spotless:apply -pl '!examples/payara-car-booking'
 **langchain4j-cdi-core**: Foundation of the CDI integration
 - `@RegisterAIService` stereotype annotation for declaring AI service interfaces
 - `CommonAIServiceCreator` utility for building AI service proxies from CDI beans
-- `@RegisterAgent` stereotype annotation for declaring agentic system interfaces
-- `CommonAgentCreator` utility for building agent proxies across all 8 topologies (SIMPLE, SEQUENCE, LOOP, PARALLEL, CONDITIONAL, SUPERVISOR, PLANNER, A2A)
+- 11 per-topology agent stereotype annotations (`@RegisterSimpleAgent`, `@RegisterSequenceAgent`, `@RegisterLoopAgent`, `@RegisterParallelAgent`, `@RegisterParallelMapperAgent`, `@RegisterConditionalAgent`, `@RegisterSupervisorAgent`, `@RegisterPlannerAgent`, `@RegisterA2AAgent`, `@RegisterMcpClientAgent`, `@RegisterHumanInTheLoopAgent`)
+- `CommonAgentCreator` utility for building agent proxies across all 11 topologies
 - `AgentTopologyType` enum defining available orchestration patterns
 - `A2AAgentBuilder` SPI for pluggable A2A topology implementation (loaded via `ServiceLoader`)
 - `LLMConfig` and `LLMConfigProvider` configuration API and SPI

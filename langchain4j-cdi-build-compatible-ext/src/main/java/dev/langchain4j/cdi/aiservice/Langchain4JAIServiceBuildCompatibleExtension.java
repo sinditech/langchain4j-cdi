@@ -1,9 +1,20 @@
 package dev.langchain4j.cdi.aiservice;
 
 import dev.langchain4j.agentic.internal.InternalAgent;
+import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.agent.CommonAgentCreator;
+import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterAIService;
-import dev.langchain4j.cdi.spi.RegisterAgent;
+import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
+import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterMcpClientAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelMapperAgent;
+import dev.langchain4j.cdi.spi.RegisterPlannerAgent;
+import dev.langchain4j.cdi.spi.RegisterSequenceAgent;
+import dev.langchain4j.cdi.spi.RegisterSimpleAgent;
+import dev.langchain4j.cdi.spi.RegisterSupervisorAgent;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension;
 import jakarta.enterprise.inject.build.compatible.spi.ClassConfig;
@@ -77,15 +88,29 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
             if (annotationInfo != null) {
                 registerAIService(classInfo);
             }
-            AnnotationInfo agentAnnotationInfo = classInfo.annotation(RegisterAgent.class);
-            if (agentAnnotationInfo != null) {
+            if (hasAnyAgentAnnotation(classInfo)) {
                 registerAgent(classInfo);
             }
         }
     }
 
     @SuppressWarnings("unused")
-    @Enhancement(types = Object.class, withAnnotations = RegisterAgent.class, withSubtypes = true)
+    @Enhancement(
+            types = Object.class,
+            withAnnotations = {
+                RegisterSimpleAgent.class,
+                RegisterSequenceAgent.class,
+                RegisterLoopAgent.class,
+                RegisterParallelAgent.class,
+                RegisterParallelMapperAgent.class,
+                RegisterConditionalAgent.class,
+                RegisterSupervisorAgent.class,
+                RegisterPlannerAgent.class,
+                RegisterA2AAgent.class,
+                RegisterMcpClientAgent.class,
+                RegisterHumanInTheLoopAgent.class
+            },
+            withSubtypes = true)
     @Priority(11)
     public void detectRegisterAgent(ClassConfig classConfig) throws ClassNotFoundException {
         ClassInfo classInfo = classConfig.info();
@@ -118,13 +143,26 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
                 LOGGER.info("RegisterAgent of type " + classInfo.name());
                 detectedAgentDeclaredInterfaces.add(interfaceClass);
             }
-
-            RegisterAgent annotation = interfaceClass.getAnnotation(RegisterAgent.class);
-            detectedTools.addAll(
-                    Arrays.stream(annotation.tools()).map(Class::getName).collect(Collectors.toList()));
         } else {
-            LOGGER.warning("The class is Annotated with @RegisterAgent, but only interface are allowed" + classInfo);
+            LOGGER.warning(
+                    "The class is Annotated with an agent annotation, but only interfaces are allowed: " + classInfo);
         }
+    }
+
+    // Mirrors AgentAnnotationMeta.detect(Class<?>) but operates on the build-time ClassInfo type
+    // rather than a runtime Class. Keep both lists in sync when adding new topology annotations.
+    private static boolean hasAnyAgentAnnotation(ClassInfo classInfo) {
+        return classInfo.annotation(RegisterSimpleAgent.class) != null
+                || classInfo.annotation(RegisterSequenceAgent.class) != null
+                || classInfo.annotation(RegisterLoopAgent.class) != null
+                || classInfo.annotation(RegisterParallelAgent.class) != null
+                || classInfo.annotation(RegisterParallelMapperAgent.class) != null
+                || classInfo.annotation(RegisterConditionalAgent.class) != null
+                || classInfo.annotation(RegisterSupervisorAgent.class) != null
+                || classInfo.annotation(RegisterPlannerAgent.class) != null
+                || classInfo.annotation(RegisterA2AAgent.class) != null
+                || classInfo.annotation(RegisterMcpClientAgent.class) != null
+                || classInfo.annotation(RegisterHumanInTheLoopAgent.class) != null;
     }
 
     private static Class<?> getLoadClass(String className) throws ClassNotFoundException {
@@ -152,21 +190,23 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
 
         for (Class<?> interfaceClass : detectedAgentDeclaredInterfaces) {
             LOGGER.info("Create synthetic agent " + interfaceClass);
-            RegisterAgent annotation = interfaceClass.getAnnotation(RegisterAgent.class);
+            AgentAnnotationMeta meta = AgentAnnotationMeta.detect(interfaceClass);
 
             SyntheticBeanBuilder<Object> builder =
                     (SyntheticBeanBuilder<Object>) syntheticComponents.addBean(interfaceClass);
 
-            String agentName = CdiLookupHelper.resolveExpression(annotation.name());
+            String agentName = meta != null ? CdiLookupHelper.resolveExpression(meta.rawName()) : null;
             String beanName = (agentName != null && !agentName.isBlank())
                     ? agentName
                     : CommonAgentCreator.AGENT_BEAN_NAME_PREFIX + interfaceClass.getName();
+            Class<? extends java.lang.annotation.Annotation> scope =
+                    meta != null ? meta.scope() : jakarta.enterprise.context.ApplicationScoped.class;
 
             builder.createWith(AIAgentCreator.class)
                     .type(interfaceClass)
                     .type(InternalAgent.class)
                     .type(Object.class)
-                    .scope(annotation.scope())
+                    .scope(scope)
                     .name(beanName)
                     .withParam(PARAM_AGENT_INTERFACE_CLASS, interfaceClass);
         }

@@ -1,6 +1,6 @@
 # langchain4j-cdi-el — Jakarta EL Expression Resolver
 
-This module provides an `ExpressionResolver` SPI implementation that evaluates **Jakarta Expression Language (EL)** expressions embedded in `#{...}` delimiters within `@RegisterAIService` and `@RegisterAgent` annotation attributes.
+This module provides an `ExpressionResolver` SPI implementation that evaluates **Jakarta Expression Language (EL)** expressions embedded in `#{...}` delimiters within `@RegisterAIService` and agent stereotype annotation attributes.
 
 ## Overview
 
@@ -57,7 +57,7 @@ public interface SmartAssistant {
 Delegate the bean name to a `@Named` configuration bean:
 
 ```java
-@RegisterAgent(name = "#{agentConfig.reviewerName}", chatModelName = "#default")
+@RegisterSimpleAgent(name = "#{agentConfig.reviewerName}", chatModelName = "#default")
 public interface ReviewAgent {
     @Agent
     String review(@V("text") String text);

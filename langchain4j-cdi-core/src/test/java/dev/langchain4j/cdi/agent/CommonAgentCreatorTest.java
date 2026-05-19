@@ -7,9 +7,23 @@ import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.internal.AgentExecutor;
 import dev.langchain4j.agentic.internal.InternalAgent;
+import dev.langchain4j.agentic.internal.McpClientBuilder;
+import dev.langchain4j.agentic.internal.McpService;
 import dev.langchain4j.agentic.observability.AgentListener;
+import dev.langchain4j.agentic.planner.Planner;
+import dev.langchain4j.agentic.scope.AgenticScope;
 import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
-import dev.langchain4j.cdi.spi.RegisterAgent;
+import dev.langchain4j.cdi.spi.RegisterA2AAgent;
+import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
+import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterLoopAgent;
+import dev.langchain4j.cdi.spi.RegisterMcpClientAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelAgent;
+import dev.langchain4j.cdi.spi.RegisterParallelMapperAgent;
+import dev.langchain4j.cdi.spi.RegisterPlannerAgent;
+import dev.langchain4j.cdi.spi.RegisterSequenceAgent;
+import dev.langchain4j.cdi.spi.RegisterSimpleAgent;
+import dev.langchain4j.cdi.spi.RegisterSupervisorAgent;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.guardrail.InputGuardrail;
@@ -28,7 +42,13 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.literal.NamedLiteral;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.MockedStatic;
 
 class CommonAgentCreatorTest {
 
@@ -60,40 +80,30 @@ class CommonAgentCreatorTest {
         }
     }
 
-    public static class UninstantiableGuardrail implements InputGuardrail {
-
-        public UninstantiableGuardrail(String required) {}
-
-        @Override
-        public InputGuardrailResult validate(UserMessage userMessage) {
-            return success();
-        }
-    }
-
     // --- Test interfaces for SIMPLE topology (non-@Agent path) ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(chatModelName = "#default")
+    @RegisterSimpleAgent(chatModelName = "#default")
     interface SimpleAgent {
 
         String chat(@V("question") String question);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(name = "myAgent", chatModelName = "#default")
+    @RegisterSimpleAgent(name = "myAgent", chatModelName = "#default")
     interface NamedAgent {
 
         String chat(@V("question") String question);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(chatModelName = "#default")
+    @RegisterSimpleAgent(chatModelName = "#default")
     interface AgentWithDoWork {
 
         String doWork(@V("input") String input);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
+    @RegisterSimpleAgent(
             chatModelName = "#default",
             chatMemoryName = "mem1",
             retrievalAugmentorName = "ra1",
@@ -105,7 +115,7 @@ class CommonAgentCreatorTest {
 
     // --- Test interface for SIMPLE topology (@Agent path) ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(chatModelName = "#default")
+    @RegisterSimpleAgent(chatModelName = "#default")
     interface AgenticAgent {
 
         @Agent(description = "test agent")
@@ -114,38 +124,24 @@ class CommonAgentCreatorTest {
 
     // --- Tool resolution interfaces ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            toolProviderName = "tp1",
-            tools = {ToolAImpl.class},
-            chatModelName = "#default")
+    @RegisterSimpleAgent(toolProviderName = "tp1", chatModelName = "#default")
     interface AgentWithToolProvider {
 
         String chat(@V("question") String question);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            tools = {ToolAImpl.class},
-            toolProviderName = "",
-            chatModelName = "#default")
-    interface AgentWithToolsArray {
+    @RegisterSimpleAgent(
+            chatModelName = "#default",
+            toolNames = {"myTool"})
+    interface AgentWithToolNames {
 
         String chat(@V("question") String question);
     }
 
     // --- Guardrail interfaces ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            chatModelName = "#default",
-            inputGuardrails = {TestInputGuardrail.class},
-            outputGuardrails = {TestOutputGuardrail.class})
-    interface AgentWithGuardrails {
-
-        String chat(@V("question") String question);
-    }
-
-    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
+    @RegisterSimpleAgent(
             chatModelName = "#default",
             inputGuardrailNames = {"myIG"},
             outputGuardrailNames = {"myOG"})
@@ -155,17 +151,7 @@ class CommonAgentCreatorTest {
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            chatModelName = "#default",
-            inputGuardrails = {TestInputGuardrail.class},
-            inputGuardrailNames = {"shouldBeIgnored"})
-    interface AgentWithBothGuardrailConfigs {
-
-        String chat(@V("question") String question);
-    }
-
-    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
+    @RegisterSimpleAgent(
             chatModelName = "#default",
             inputGuardrailNames = {"nonExistent"})
     interface AgentWithUnresolvableNamedGuardrail {
@@ -173,34 +159,16 @@ class CommonAgentCreatorTest {
         String chat(@V("question") String question);
     }
 
-    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            chatModelName = "#default",
-            inputGuardrails = {TestInputGuardrail.class})
-    interface AgentWithGuardrailFallback {
-
-        String chat(@V("question") String question);
-    }
-
-    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            chatModelName = "#default",
-            inputGuardrails = {UninstantiableGuardrail.class})
-    interface AgentWithUninstantiableGuardrail {
-
-        String chat(@V("question") String question);
-    }
-
     // --- Expression-resolved interfaces ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(chatModelName = "${#default}")
+    @RegisterSimpleAgent(chatModelName = "${#default}")
     interface ExpressionChatModelAgent {
 
         String chat(@V("q") String q);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(name = "${myAgent}", chatModelName = "#default")
+    @RegisterSimpleAgent(name = "${myAgent}", chatModelName = "#default")
     interface ExpressionNamedAgent {
 
         String chat(@V("q") String q);
@@ -208,25 +176,29 @@ class CommonAgentCreatorTest {
 
     // --- A2A interfaces ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(topology = AgentTopologyType.A2A, a2aServerUrl = "")
+    @RegisterA2AAgent(a2aServerUrl = "")
     interface A2AAgentBlankUrl {
+
+        String chat(String question);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterA2AAgent(a2aServerUrl = "http://remote-agent:8080")
+    interface A2AAgentWithUrl {
 
         String chat(String question);
     }
 
     // --- Test interfaces for composed topologies ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            topology = AgentTopologyType.SEQUENCE,
-            subAgentNames = {"stepA", "stepB"})
+    @RegisterSequenceAgent(subAgentNames = {"stepA", "stepB"})
     interface SequenceOrchestrator {
 
         String process(@V("input") String input);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            topology = AgentTopologyType.LOOP,
+    @RegisterLoopAgent(
             subAgentNames = {"worker"},
             maxIterations = 3)
     interface LoopOrchestrator {
@@ -235,26 +207,82 @@ class CommonAgentCreatorTest {
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            topology = AgentTopologyType.PARALLEL,
-            subAgentNames = {"taskA", "taskB"})
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            maxIterations = 3,
+            exitConditionName = "myExitCondition")
+    interface LoopOrchestratorWithExitCondition {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            maxIterations = 3,
+            exitConditionName = "myExitCondition",
+            exitConditionDescription = "Check if done")
+    interface LoopOrchestratorWithExitConditionAndDescription {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            maxIterations = 5,
+            exitConditionName = "myBiExitCondition")
+    interface LoopOrchestratorWithBiPredicateExitCondition {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            maxIterations = 5,
+            exitConditionName = "myBiExitCondition",
+            exitConditionDescription = "Check if done")
+    interface LoopOrchestratorWithBiPredicateAndDescription {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            exitConditionName = "myExitCondition",
+            testAfterEachIteration = true)
+    interface LoopOrchestratorWithTestAfterEachIteration {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterLoopAgent(
+            subAgentNames = {"worker"},
+            exitConditionName = "unresolvableCondition")
+    interface LoopOrchestratorWithUnresolvableExitCondition {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterParallelAgent(subAgentNames = {"taskA", "taskB"})
     interface ParallelOrchestrator {
 
         String process(@V("input") String input);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            topology = AgentTopologyType.CONDITIONAL,
-            subAgentNames = {"branchA", "branchB"})
+    @RegisterConditionalAgent(subAgentNames = {"branchA", "branchB"})
     interface ConditionalOrchestrator {
 
         String process(@V("input") String input);
     }
 
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(
-            topology = AgentTopologyType.SUPERVISOR,
+    @RegisterSupervisorAgent(
             chatModelName = "#default",
             subAgentNames = {"workerAgent"},
             maxAgentsInvocations = 5)
@@ -263,11 +291,101 @@ class CommonAgentCreatorTest {
         String process(@V("input") String input);
     }
 
-    // Used to document that PLANNER without @PlannerSupplier leaves plannerSupplier=null,
-    // producing a NullPointerException when build() tries to eagerly call plannerSupplier.get().
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
-    @RegisterAgent(topology = AgentTopologyType.PLANNER)
+    @RegisterPlannerAgent
     interface PlannerOrchestratorWithoutSupplier {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterPlannerAgent(
+            subAgentNames = {"plannerWorker"},
+            plannerName = "myPlanner")
+    interface PlannerOrchestratorWithPlannerName {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterSupervisorAgent(
+            chatModelName = "#default",
+            subAgentNames = {"workerAgent"},
+            supervisorContext = "Always respond in formal English")
+    interface SupervisorOrchestratorWithContext {
+
+        String process(@V("input") String input);
+    }
+
+    // --- Test interfaces for PARALLEL_MAPPER topology ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterParallelMapperAgent(
+            subAgentNames = {"worker"},
+            itemsKey = "items")
+    interface ParallelMapperOrchestrator {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterParallelMapperAgent(
+            subAgentNames = {"worker"},
+            itemsKey = "")
+    interface ParallelMapperOrchestratorNoItemsKey {
+
+        String process(@V("input") String input);
+    }
+
+    // --- Test interfaces for HUMAN_IN_THE_LOOP topology ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterHumanInTheLoopAgent(responseProviderName = "myProvider")
+    interface HumanInTheLoopAgent {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterHumanInTheLoopAgent(outputKey = "result", description = "Waits for human approval")
+    interface HumanInTheLoopAgentNoProvider {
+
+        String process(@V("input") String input);
+    }
+
+    // --- Test interfaces for MCP_CLIENT topology ---
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterMcpClientAgent(mcpClientName = "", mcpToolName = "web_search")
+    interface McpClientAgentBlankClientName {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterMcpClientAgent(mcpClientName = "myMcpClient", mcpToolName = "")
+    interface McpClientAgentBlankToolName {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterMcpClientAgent(mcpClientName = "unknownClient", mcpToolName = "search")
+    interface McpClientAgentUnresolvableClient {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterMcpClientAgent(
+            mcpClientName = "myMcpClient",
+            mcpToolName = "web_search",
+            mcpInputKeys = {"query", "locale"})
+    interface McpClientAgentWithInputKeys {
+
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterMcpClientAgent(mcpClientName = "myMcpClient", mcpToolName = "web_search", async = true)
+    interface McpClientAgentAsync {
 
         String process(@V("input") String input);
     }
@@ -429,7 +547,7 @@ class CommonAgentCreatorTest {
     // =========================================================================
     @SuppressWarnings("unchecked")
     @Test
-    void create_prefersToolProviderOverToolsArray() {
+    void create_prefersToolProviderOverToolNames() {
         Instance<Object> lookup = prepareLookups();
         Instance<ToolProvider> tp = mock(Instance.class);
         ToolProvider provider = mock(ToolProvider.class);
@@ -441,60 +559,35 @@ class CommonAgentCreatorTest {
         assertNotNull(agent);
     }
 
-    @Test
-    void create_fallsBackToToolsArrayWhenNoToolProvider() {
-        Instance<Object> lookup = prepareLookups();
-        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
-        assertNotNull(agent);
-    }
-
     @SuppressWarnings("unchecked")
     @Test
-    void create_toolFromCdiWhenResolvable() {
+    void create_resolvesNamedToolFromCdi() {
         Instance<Object> lookup = prepareLookups();
-        Instance<ToolAImpl> toolInstance = mock(Instance.class);
-        when(lookup.select(ToolAImpl.class)).thenReturn(toolInstance);
+        Instance<Object> toolInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("myTool"))).thenReturn(toolInstance);
         when(toolInstance.isResolvable()).thenReturn(true);
         when(toolInstance.get()).thenReturn(new ToolAImpl());
 
-        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolNames.class);
         assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("myTool"));
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void create_toolFallsBackToConstructorWhenCdiUnresolvable() {
+    void create_skipsUnresolvableNamedTool() {
         Instance<Object> lookup = prepareLookups();
-        Instance<ToolAImpl> toolInstance = mock(Instance.class);
-        when(lookup.select(ToolAImpl.class)).thenReturn(toolInstance);
+        Instance<Object> toolInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("myTool"))).thenReturn(toolInstance);
         when(toolInstance.isResolvable()).thenReturn(false);
 
-        Object agent = CommonAgentCreator.create(lookup, AgentWithToolsArray.class);
+        Object agent = CommonAgentCreator.create(lookup, AgentWithToolNames.class);
         assertNotNull(agent);
     }
 
     // =========================================================================
     // Guardrail wiring
     // =========================================================================
-    @SuppressWarnings("unchecked")
-    @Test
-    void create_wiresInputAndOutputGuardrailsFromClasses() {
-        Instance<Object> lookup = prepareLookups();
-
-        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
-        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
-        when(igInstance.isResolvable()).thenReturn(true);
-        when(igInstance.get()).thenReturn(new TestInputGuardrail());
-
-        Instance<TestOutputGuardrail> ogInstance = mock(Instance.class);
-        when(lookup.select(TestOutputGuardrail.class)).thenReturn(ogInstance);
-        when(ogInstance.isResolvable()).thenReturn(true);
-        when(ogInstance.get()).thenReturn(new TestOutputGuardrail());
-
-        Object agent = CommonAgentCreator.create(lookup, AgentWithGuardrails.class);
-        assertNotNull(agent);
-    }
-
     @SuppressWarnings("unchecked")
     @Test
     void create_wiresNamedInputAndOutputGuardrails() {
@@ -516,20 +609,6 @@ class CommonAgentCreatorTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void create_classGuardrailsTakePrecedenceOverNamedGuardrails() {
-        Instance<Object> lookup = prepareLookups();
-
-        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
-        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
-        when(igInstance.isResolvable()).thenReturn(true);
-        when(igInstance.get()).thenReturn(new TestInputGuardrail());
-
-        Object agent = CommonAgentCreator.create(lookup, AgentWithBothGuardrailConfigs.class);
-        assertNotNull(agent);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
     void create_skipsUnresolvableNamedGuardrails() {
         Instance<Object> lookup = prepareLookups();
 
@@ -539,32 +618,6 @@ class CommonAgentCreatorTest {
         when(igInstance.isResolvable()).thenReturn(false);
 
         Object agent = CommonAgentCreator.create(lookup, AgentWithUnresolvableNamedGuardrail.class);
-        assertNotNull(agent);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void create_guardrailFallsBackToConstructorWhenCdiUnresolvable() {
-        Instance<Object> lookup = prepareLookups();
-
-        Instance<TestInputGuardrail> igInstance = mock(Instance.class);
-        when(lookup.select(TestInputGuardrail.class)).thenReturn(igInstance);
-        when(igInstance.isResolvable()).thenReturn(false);
-
-        Object agent = CommonAgentCreator.create(lookup, AgentWithGuardrailFallback.class);
-        assertNotNull(agent);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void create_skipsGuardrailWhenBothCdiAndConstructorFail() {
-        Instance<Object> lookup = prepareLookups();
-
-        Instance<UninstantiableGuardrail> igInstance = mock(Instance.class);
-        when(lookup.select(UninstantiableGuardrail.class)).thenReturn(igInstance);
-        when(igInstance.isResolvable()).thenReturn(false);
-
-        Object agent = CommonAgentCreator.create(lookup, AgentWithUninstantiableGuardrail.class);
         assertNotNull(agent);
     }
 
@@ -604,6 +657,97 @@ class CommonAgentCreatorTest {
 
         assertNotNull(agent);
         verify(lookup).select(Object.class, NamedLiteral.of("worker"));
+    }
+
+    static Stream<Class<?>> predicateExitConditionInterfaces() {
+        return Stream.of(
+                LoopOrchestratorWithExitCondition.class, LoopOrchestratorWithExitConditionAndDescription.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    @ParameterizedTest
+    @MethodSource("predicateExitConditionInterfaces")
+    void create_loopTopology_withPredicateExitCondition_wiresPredicateBean(Class<?> type) {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        Predicate<AgenticScope> predicate = scope -> false;
+        Instance<Predicate> predicateInstance = mock(Instance.class);
+        when(lookup.select(Predicate.class, NamedLiteral.of("myExitCondition"))).thenReturn(predicateInstance);
+        when(predicateInstance.isResolvable()).thenReturn(true);
+        when(predicateInstance.get()).thenReturn(predicate);
+
+        @SuppressWarnings("rawtypes")
+        Object agent = CommonAgentCreator.create(lookup, (Class) type);
+
+        assertNotNull(agent);
+        verify(lookup).select(Predicate.class, NamedLiteral.of("myExitCondition"));
+    }
+
+    static Stream<Class<?>> biPredicateExitConditionInterfaces() {
+        return Stream.of(
+                LoopOrchestratorWithBiPredicateExitCondition.class,
+                LoopOrchestratorWithBiPredicateAndDescription.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    @ParameterizedTest
+    @MethodSource("biPredicateExitConditionInterfaces")
+    void create_loopTopology_withBiPredicateExitCondition_fallsBackFromPredicateAndWiresBiPredicate(Class<?> type) {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        BiPredicate<AgenticScope, Integer> biPredicate = (scope, i) -> false;
+        Instance<Predicate> predicateInstance = mock(Instance.class);
+        Instance<BiPredicate> biPredicateInstance = mock(Instance.class);
+        when(lookup.select(Predicate.class, NamedLiteral.of("myBiExitCondition")))
+                .thenReturn(predicateInstance);
+        when(predicateInstance.isResolvable()).thenReturn(false);
+        when(lookup.select(BiPredicate.class, NamedLiteral.of("myBiExitCondition")))
+                .thenReturn(biPredicateInstance);
+        when(biPredicateInstance.isResolvable()).thenReturn(true);
+        when(biPredicateInstance.get()).thenReturn(biPredicate);
+
+        @SuppressWarnings("rawtypes")
+        Object agent = CommonAgentCreator.create(lookup, (Class) type);
+
+        assertNotNull(agent);
+        verify(lookup).select(BiPredicate.class, NamedLiteral.of("myBiExitCondition"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_loopTopology_withTestAfterEachIteration_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        Predicate<AgenticScope> predicate = scope -> false;
+        Instance<Predicate> predicateInstance = mock(Instance.class);
+        when(lookup.select(Predicate.class, NamedLiteral.of("myExitCondition"))).thenReturn(predicateInstance);
+        when(predicateInstance.isResolvable()).thenReturn(true);
+        when(predicateInstance.get()).thenReturn(predicate);
+
+        LoopOrchestratorWithTestAfterEachIteration agent =
+                CommonAgentCreator.create(lookup, LoopOrchestratorWithTestAfterEachIteration.class);
+
+        assertNotNull(agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_loopTopology_withUnresolvableExitCondition_buildsProxyWithoutExitCondition() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        Instance<Predicate> predicateInstance = mock(Instance.class);
+        Instance<BiPredicate> biPredicateInstance = mock(Instance.class);
+        when(lookup.select(Predicate.class, NamedLiteral.of("unresolvableCondition")))
+                .thenReturn(predicateInstance);
+        when(predicateInstance.isResolvable()).thenReturn(false);
+        when(lookup.select(BiPredicate.class, NamedLiteral.of("unresolvableCondition")))
+                .thenReturn(biPredicateInstance);
+        when(biPredicateInstance.isResolvable()).thenReturn(false);
+        Instance<Object> namedObjectInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("unresolvableCondition")))
+                .thenReturn(namedObjectInstance);
+        when(namedObjectInstance.isResolvable()).thenReturn(false);
+
+        LoopOrchestratorWithUnresolvableExitCondition agent =
+                CommonAgentCreator.create(lookup, LoopOrchestratorWithUnresolvableExitCondition.class);
+
+        assertNotNull(agent);
     }
 
     // =========================================================================
@@ -656,6 +800,185 @@ class CommonAgentCreatorTest {
     }
 
     // =========================================================================
+    // PARALLEL_MAPPER topology
+    // =========================================================================
+    @Test
+    void create_parallelMapperTopology_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        ParallelMapperOrchestrator agent = CommonAgentCreator.create(lookup, ParallelMapperOrchestrator.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Object.class, NamedLiteral.of("worker"));
+    }
+
+    @Test
+    void create_parallelMapperTopology_throwsWhenItemsKeyMissing() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("worker");
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> CommonAgentCreator.create(lookup, ParallelMapperOrchestratorNoItemsKey.class));
+        assertTrue(ex.getMessage().contains("itemsKey"));
+    }
+
+    // =========================================================================
+    // MCP_CLIENT topology
+    // =========================================================================
+
+    @Test
+    void create_mcpClientTopology_throwsWhenClientNameBlank() {
+        Instance<Object> lookup = prepareLookups();
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> CommonAgentCreator.create(lookup, McpClientAgentBlankClientName.class));
+        assertTrue(ex.getMessage().contains("mcpClientName"));
+    }
+
+    @Test
+    void create_mcpClientTopology_throwsWhenToolNameBlank() {
+        Instance<Object> lookup = prepareLookups();
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> CommonAgentCreator.create(lookup, McpClientAgentBlankToolName.class));
+        assertTrue(ex.getMessage().contains("mcpToolName"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_mcpClientTopology_throwsWhenClientBeanNotResolvable() {
+        Instance<Object> lookup = prepareLookups();
+        Instance<Object> clientInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("unknownClient"))).thenReturn(clientInstance);
+        when(clientInstance.isResolvable()).thenReturn(false);
+
+        IllegalStateException ex = assertThrows(
+                IllegalStateException.class,
+                () -> CommonAgentCreator.create(lookup, McpClientAgentUnresolvableClient.class));
+        assertTrue(ex.getMessage().contains("unknownClient"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_mcpClientTopology_wiresToolNameAndInputKeys() {
+        Instance<Object> lookup = prepareLookups();
+        Object mcpClientBean = new Object();
+        Instance<Object> clientInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("myMcpClient"))).thenReturn(clientInstance);
+        when(clientInstance.isResolvable()).thenReturn(true);
+        when(clientInstance.get()).thenReturn(mcpClientBean);
+
+        McpClientAgentWithInputKeys mockProxy = mock(McpClientAgentWithInputKeys.class);
+        McpClientBuilder<McpClientAgentWithInputKeys> mcpBuilder = mock(McpClientBuilder.class);
+        when(mcpBuilder.toolName(anyString())).thenReturn(mcpBuilder);
+        when(mcpBuilder.inputKeys(any(String[].class))).thenReturn(mcpBuilder);
+        when(mcpBuilder.async(anyBoolean())).thenReturn(mcpBuilder);
+        when(mcpBuilder.build()).thenReturn(mockProxy);
+
+        McpService mcpServiceMock = mock(McpService.class);
+        when(mcpServiceMock.mcpBuilder(mcpClientBean, McpClientAgentWithInputKeys.class))
+                .thenReturn(mcpBuilder);
+
+        try (MockedStatic<McpService> mcpStatic = mockStatic(McpService.class)) {
+            mcpStatic.when(McpService::get).thenReturn(mcpServiceMock);
+
+            McpClientAgentWithInputKeys agent = CommonAgentCreator.create(lookup, McpClientAgentWithInputKeys.class);
+
+            assertSame(mockProxy, agent);
+            verify(mcpBuilder).toolName("web_search");
+            verify(mcpBuilder).inputKeys("query", "locale");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_mcpClientTopology_wiresAsyncTrue() {
+        Instance<Object> lookup = prepareLookups();
+        Object mcpClientBean = new Object();
+        Instance<Object> clientInstance = mock(Instance.class);
+        when(lookup.select(Object.class, NamedLiteral.of("myMcpClient"))).thenReturn(clientInstance);
+        when(clientInstance.isResolvable()).thenReturn(true);
+        when(clientInstance.get()).thenReturn(mcpClientBean);
+
+        McpClientAgentAsync mockProxy = mock(McpClientAgentAsync.class);
+        McpClientBuilder<McpClientAgentAsync> mcpBuilder = mock(McpClientBuilder.class);
+        when(mcpBuilder.toolName(anyString())).thenReturn(mcpBuilder);
+        when(mcpBuilder.async(anyBoolean())).thenReturn(mcpBuilder);
+        when(mcpBuilder.build()).thenReturn(mockProxy);
+
+        McpService mcpServiceMock = mock(McpService.class);
+        when(mcpServiceMock.mcpBuilder(mcpClientBean, McpClientAgentAsync.class))
+                .thenReturn(mcpBuilder);
+
+        try (MockedStatic<McpService> mcpStatic = mockStatic(McpService.class)) {
+            mcpStatic.when(McpService::get).thenReturn(mcpServiceMock);
+
+            McpClientAgentAsync agent = CommonAgentCreator.create(lookup, McpClientAgentAsync.class);
+
+            assertSame(mockProxy, agent);
+            verify(mcpBuilder).async(true);
+        }
+    }
+
+    // =========================================================================
+    // HUMAN_IN_THE_LOOP topology
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_humanInTheLoopTopology_withSupplierProvider_buildsProxy() {
+        Instance<Object> lookup = prepareLookups();
+        java.util.function.Supplier<String> supplier = () -> "human response";
+        Instance<java.util.function.Supplier> supplierInstance = mock(Instance.class);
+        when(lookup.select(java.util.function.Supplier.class, NamedLiteral.of("myProvider")))
+                .thenReturn(supplierInstance);
+        when(supplierInstance.isResolvable()).thenReturn(true);
+        when(supplierInstance.get()).thenReturn(supplier);
+
+        HumanInTheLoopAgent agent = CommonAgentCreator.create(lookup, HumanInTheLoopAgent.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_humanInTheLoopTopology_withFunctionProvider_buildsProxy() {
+        Instance<Object> lookup = prepareLookups();
+        java.util.function.Function<AgenticScope, String> fn = scope -> "human response";
+        Instance<java.util.function.Function> functionInstance = mock(Instance.class);
+        when(lookup.select(java.util.function.Function.class, NamedLiteral.of("myProvider")))
+                .thenReturn(functionInstance);
+        when(functionInstance.isResolvable()).thenReturn(true);
+        when(functionInstance.get()).thenReturn(fn);
+
+        HumanInTheLoopAgent agent = CommonAgentCreator.create(lookup, HumanInTheLoopAgent.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+        // Confirm the Function was actually retrieved from CDI and wired, not silently skipped.
+        verify(functionInstance).get();
+    }
+
+    @Test
+    void create_humanInTheLoopTopology_withNoProvider_buildsProxy() {
+        Instance<Object> lookup = prepareLookups();
+        HumanInTheLoopAgentNoProvider agent = CommonAgentCreator.create(lookup, HumanInTheLoopAgentNoProvider.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void toAgentExecutor_humanInTheLoopProxy_returnsAgentExecutor() {
+        Instance<Object> lookup = prepareLookups();
+        HumanInTheLoopAgentNoProvider proxy = CommonAgentCreator.create(lookup, HumanInTheLoopAgentNoProvider.class);
+        assertInstanceOf(InternalAgent.class, proxy);
+
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
+    }
+
+    // =========================================================================
     // PLANNER topology
     // =========================================================================
     @Test
@@ -672,12 +995,37 @@ class CommonAgentCreatorTest {
 
     @Test
     void create_plannerTopology_throwsWhenPlannerSupplierMissing() {
-        // Without @PlannerSupplier, configurePlanner() leaves plannerSupplier=null.
-        // build() eagerly calls plannerSupplier.get() producing a NullPointerException.
         Instance<Object> lookup = prepareLookups();
-        assertThrows(
-                NullPointerException.class,
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
                 () -> CommonAgentCreator.create(lookup, PlannerOrchestratorWithoutSupplier.class));
+        assertTrue(ex.getMessage().contains("plannerName"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void create_plannerTopology_withPlannerName_wiresPlanner() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("plannerWorker");
+        Planner plannerMock = mock(Planner.class);
+        Instance<Planner> plannerInstance = mock(Instance.class);
+        when(lookup.select(Planner.class, NamedLiteral.of("myPlanner"))).thenReturn(plannerInstance);
+        when(plannerInstance.isResolvable()).thenReturn(true);
+        when(plannerInstance.get()).thenReturn(plannerMock);
+
+        PlannerOrchestratorWithPlannerName agent =
+                CommonAgentCreator.create(lookup, PlannerOrchestratorWithPlannerName.class);
+
+        assertNotNull(agent);
+        verify(lookup).select(Planner.class, NamedLiteral.of("myPlanner"));
+    }
+
+    @Test
+    void create_supervisorTopology_withSupervisorContext_buildsProxy() {
+        Instance<Object> lookup = prepareLookupsWithSubAgents("workerAgent");
+        SupervisorOrchestratorWithContext agent =
+                CommonAgentCreator.create(lookup, SupervisorOrchestratorWithContext.class);
+
+        assertNotNull(agent);
     }
 
     // =========================================================================
@@ -687,8 +1035,16 @@ class CommonAgentCreatorTest {
     void create_a2aTopology_throwsWhenSpiMissing() {
         Instance<Object> lookup = prepareLookups();
         IllegalStateException ex = assertThrows(
-                IllegalStateException.class, () -> CommonAgentCreator.create(lookup, A2AAgentBlankUrl.class));
+                IllegalStateException.class, () -> CommonAgentCreator.create(lookup, A2AAgentWithUrl.class));
         assertTrue(ex.getMessage().contains("langchain4j-cdi-a2a"));
+    }
+
+    @Test
+    void create_a2aTopology_throwsWhenUrlBlank() {
+        Instance<Object> lookup = prepareLookups();
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class, () -> CommonAgentCreator.create(lookup, A2AAgentBlankUrl.class));
+        assertTrue(ex.getMessage().contains("a2aServerUrl"));
     }
 
     // =========================================================================
@@ -699,7 +1055,46 @@ class CommonAgentCreatorTest {
         Instance<Object> lookup = prepareLookups();
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class, () -> CommonAgentCreator.create(lookup, PlainInterface.class));
-        assertTrue(ex.getMessage().contains("must be annotated with @RegisterAgent"));
+        assertTrue(ex.getMessage().contains("per-topology stereotype"));
+    }
+
+    // =========================================================================
+    // toAgentExecutor — Weld CDI proxy simulation
+    //
+    // Weld (WildFly) generates client proxies as bytecode subclasses:
+    //   WeldProxy extends WeldGeneratedBase (which implements UserInterface + InternalAgent)
+    // so proxy.getClass().getInterfaces() returns [] — the annotated interface is only found
+    // by walking the superclass chain. The two inner classes below reproduce this structure.
+    // =========================================================================
+
+    /** Simulates the Weld-generated base class that directly implements the user's agent interface. */
+    abstract static class WeldLikeBaseClass implements SimpleAgent, InternalAgent {}
+
+    /**
+     * Simulates the actual Weld client proxy: it extends the base class but does NOT declare any interfaces of its own,
+     * so {@code getClass().getInterfaces()} returns an empty array. Abstract because Mockito will provide the method
+     * implementations.
+     */
+    abstract static class WeldLikeProxyClass extends WeldLikeBaseClass {}
+
+    @Test
+    void toAgentExecutor_withWeldProxyInheritingInterfaceViaSuperclass_returnsAgentExecutor() {
+        // Verify that the simulated proxy class does NOT directly implement SimpleAgent
+        // (i.e. it's not in getInterfaces()), which is the bug trigger on WildFly.
+        assertFalse(
+                java.util.Arrays.asList(WeldLikeProxyClass.class.getInterfaces())
+                        .contains(SimpleAgent.class),
+                "WeldLikeProxyClass must not directly implement SimpleAgent — test precondition");
+
+        // But it IS an InternalAgent (via the superclass), so the instanceof branch is entered.
+        WeldLikeProxyClass proxy = mock(WeldLikeProxyClass.class);
+        assertInstanceOf(InternalAgent.class, proxy);
+
+        // Before the fix (using getInterfaces() directly), this threw "Agent executor not found".
+        // After the fix (allInterfaces walks the superclass chain), it must succeed.
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
     }
 
     // =========================================================================
@@ -733,6 +1128,18 @@ class CommonAgentCreatorTest {
 
         assertInstanceOf(AgentExecutor.class, result);
         // NamedAgent declares name = "myAgent" — the resulting AgentExecutor must use it
+        assertEquals("myAgent", ((InternalAgent) result).name());
+    }
+
+    @Test
+    void toAgentExecutor_withExpressionResolvedName_usesResolvedName() {
+        Instance<Object> lookup = prepareLookups();
+        // ExpressionNamedAgent has name = "${myAgent}"; TestExpressionResolver strips ${} → "myAgent"
+        ExpressionNamedAgent proxy = CommonAgentCreator.create(lookup, ExpressionNamedAgent.class);
+
+        Object result = CommonAgentCreator.toAgentExecutor(proxy);
+
+        assertInstanceOf(AgentExecutor.class, result);
         assertEquals("myAgent", ((InternalAgent) result).name());
     }
 
