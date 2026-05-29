@@ -52,6 +52,7 @@ import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.enterprise.inject.spi.CDI;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -963,7 +964,7 @@ public class CommonAgentCreator {
     private static Method findEntryMethod(Class<?> agentInterface) {
         // Check methods declared directly on the interface first.
         List<Method> declared = Arrays.stream(agentInterface.getDeclaredMethods())
-                .filter(m -> !m.isDefault())
+                .filter(m -> !m.isDefault() && !Modifier.isStatic(m.getModifiers()))
                 .toList();
         if (declared.size() > 1) {
             throw new IllegalArgumentException("Agent interface "
@@ -978,7 +979,7 @@ public class CommonAgentCreator {
         // interfaces. This handles the pattern where the entry method is declared in a shared base
         // interface extended by the agent interface.
         List<Method> inherited = Arrays.stream(agentInterface.getMethods())
-                .filter(m -> !m.isDefault() && !m.isSynthetic())
+                .filter(m -> !m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers()))
                 .distinct()
                 .toList();
         if (inherited.size() > 1) {
