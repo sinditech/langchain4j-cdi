@@ -52,6 +52,7 @@ import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.enterprise.inject.spi.CDI;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -138,15 +139,23 @@ public class CommonAgentCreator {
 
         Method entryMethod = findEntryMethod(interfaceClass);
         if (entryMethod != null && entryMethod.isAnnotationPresent(Agent.class)) {
-            return AgenticServices.createAgenticSystem(interfaceClass, chatModel, ctx -> {
-                var builder = ctx.agentBuilder();
-                if (streamingChatModel != null) {
-                    builder.streamingChatModel(streamingChatModel);
-                }
-                AgentComponents.resolve(ann, lookup, interfaceClass.getSimpleName())
-                        .applyTo(builder);
-                applyListener(builder::listener, ann.agentListenerName(), lookup);
-            });
+            return AgenticServices.createAgenticSystem(
+                    interfaceClass,
+                    chatModel,
+                    new AgenticServices.AgentConfigurator(
+                            ctx -> {
+                                var builder = ctx.agentBuilder();
+                                if (streamingChatModel != null) {
+                                    builder.streamingChatModel(streamingChatModel);
+                                }
+                                AgentComponents.resolve(ann, lookup, interfaceClass.getSimpleName())
+                                        .applyTo(builder);
+                                applyListener(builder::listener, ann.agentListenerName(), lookup);
+                            },
+                            agentClass -> {
+                                Instance<?> instance = lookup.select(agentClass);
+                                return instance.isResolvable() ? instance.get() : null;
+                            }));
         }
 
         X aiService = buildAiServiceForSimple(interfaceClass, ann, chatModel, streamingChatModel, lookup);
@@ -539,11 +548,15 @@ public class CommonAgentCreator {
         static AgentComponents resolve(RegisterSimpleAgent ann, Instance<Object> lookup, String interfaceName) {
             ToolProvider toolProvider =
                     CdiLookupHelper.resolveSingle(lookup, ToolProvider.class, ann.toolProviderName());
-            List<Object> tools = ann.toolNames().length > 0
-                    ? CdiLookupHelper.resolveToolsByName(ann.toolNames(), lookup)
-                    : List.of();
+            List<Object> tools = new java.util.ArrayList<>();
+            if (ann.tools().length > 0) {
+                tools.addAll(CdiLookupHelper.resolveToolInstances(ann.tools(), lookup));
+            }
+            if (ann.toolNames().length > 0) {
+                tools.addAll(CdiLookupHelper.resolveToolsByName(ann.toolNames(), lookup));
+            }
             if (toolProvider != null && !tools.isEmpty()) {
-                LOGGER.warning("Both toolProviderName and toolNames[] are configured on "
+                LOGGER.warning("Both toolProviderName and tools/toolNames[] are configured on "
                         + interfaceName
                         + "; overlapping tool names will cause IllegalConfigurationException at runtime.");
             }
@@ -555,10 +568,10 @@ public class CommonAgentCreator {
             ContentRetriever contentRetriever = retrievalAugmentor == null
                     ? CdiLookupHelper.resolveSingle(lookup, ContentRetriever.class, ann.contentRetrieverName())
                     : null;
-            List<InputGuardrail> inputGuardrails =
-                    CdiLookupHelper.resolveGuardrailsByName(lookup, InputGuardrail.class, ann.inputGuardrailNames());
-            List<OutputGuardrail> outputGuardrails =
-                    CdiLookupHelper.resolveGuardrailsByName(lookup, OutputGuardrail.class, ann.outputGuardrailNames());
+            List<InputGuardrail> inputGuardrails = CdiLookupHelper.resolveInputGuardrails(
+                    lookup, ann.inputGuardrails(), ann.inputGuardrailNames(), interfaceName);
+            List<OutputGuardrail> outputGuardrails = CdiLookupHelper.resolveOutputGuardrails(
+                    lookup, ann.outputGuardrails(), ann.outputGuardrailNames(), interfaceName);
             return new AgentComponents(
                     toolProvider,
                     tools,
@@ -951,7 +964,7 @@ public class CommonAgentCreator {
     private static Method findEntryMethod(Class<?> agentInterface) {
         // Check methods declared directly on the interface first.
         List<Method> declared = Arrays.stream(agentInterface.getDeclaredMethods())
-                .filter(m -> !m.isDefault())
+                .filter(m -> !m.isDefault() && !Modifier.isStatic(m.getModifiers()))
                 .toList();
         if (declared.size() > 1) {
             throw new IllegalArgumentException("Agent interface "
@@ -966,7 +979,7 @@ public class CommonAgentCreator {
         // interfaces. This handles the pattern where the entry method is declared in a shared base
         // interface extended by the agent interface.
         List<Method> inherited = Arrays.stream(agentInterface.getMethods())
-                .filter(m -> !m.isDefault() && !m.isSynthetic())
+                .filter(m -> !m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers()))
                 .distinct()
                 .toList();
         if (inherited.size() > 1) {
