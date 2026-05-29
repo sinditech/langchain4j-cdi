@@ -138,15 +138,23 @@ public class CommonAgentCreator {
 
         Method entryMethod = findEntryMethod(interfaceClass);
         if (entryMethod != null && entryMethod.isAnnotationPresent(Agent.class)) {
-            return AgenticServices.createAgenticSystem(interfaceClass, chatModel, ctx -> {
-                var builder = ctx.agentBuilder();
-                if (streamingChatModel != null) {
-                    builder.streamingChatModel(streamingChatModel);
-                }
-                AgentComponents.resolve(ann, lookup, interfaceClass.getSimpleName())
-                        .applyTo(builder);
-                applyListener(builder::listener, ann.agentListenerName(), lookup);
-            });
+            return AgenticServices.createAgenticSystem(
+                    interfaceClass,
+                    chatModel,
+                    new AgenticServices.AgentConfigurator(
+                            ctx -> {
+                                var builder = ctx.agentBuilder();
+                                if (streamingChatModel != null) {
+                                    builder.streamingChatModel(streamingChatModel);
+                                }
+                                AgentComponents.resolve(ann, lookup, interfaceClass.getSimpleName())
+                                        .applyTo(builder);
+                                applyListener(builder::listener, ann.agentListenerName(), lookup);
+                            },
+                            agentClass -> {
+                                Instance<?> instance = lookup.select(agentClass);
+                                return instance.isResolvable() ? instance.get() : null;
+                            }));
         }
 
         X aiService = buildAiServiceForSimple(interfaceClass, ann, chatModel, streamingChatModel, lookup);
