@@ -1,5 +1,6 @@
 package dev.langchain4j.cdi.aiservice;
 
+import dev.langchain4j.agentic.internal.AgenticScopeOwner;
 import dev.langchain4j.agentic.internal.InternalAgent;
 import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.agent.CommonAgentCreator;
@@ -205,6 +206,7 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
             builder.createWith(AIAgentCreator.class)
                     .type(interfaceClass)
                     .type(InternalAgent.class)
+                    .type(AgenticScopeOwner.class)
                     .type(Object.class)
                     .scope(scope)
                     .name(beanName)

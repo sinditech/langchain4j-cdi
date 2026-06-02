@@ -1,5 +1,6 @@
 package dev.langchain4j.cdi.core.portableextension;
 
+import dev.langchain4j.agentic.internal.AgenticScopeOwner;
 import dev.langchain4j.agentic.internal.InternalAgent;
 import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.agent.CommonAgentCreator;
@@ -71,6 +72,7 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
         Set<Type> types = new HashSet<>();
         types.add(agentInterfaceClass);
         types.add(InternalAgent.class);
+        types.add(AgenticScopeOwner.class);
         types.add(Object.class);
         return Collections.unmodifiableSet(types);
     }

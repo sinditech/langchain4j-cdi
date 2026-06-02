@@ -10,6 +10,7 @@ import dev.langchain4j.agentic.internal.AgentExecutor;
 import dev.langchain4j.agentic.internal.AgentInvoker;
 import dev.langchain4j.agentic.internal.AgentSpecsProvider;
 import dev.langchain4j.agentic.internal.AgentUtil;
+import dev.langchain4j.agentic.internal.AgenticScopeOwner;
 import dev.langchain4j.agentic.internal.InternalAgent;
 import dev.langchain4j.agentic.internal.McpService;
 import dev.langchain4j.agentic.internal.NonAiAgentInstance;
@@ -195,6 +196,12 @@ public class CommonAgentCreator {
             // InternalAgent and its supertypes, routing the full internal-method hierarchy here.
             if (declaringClass.isAssignableFrom(InternalAgent.class)) {
                 return method.invoke(agentInstance, args);
+            }
+            // Simple AI-service agents have no planner scope. When AgentExecutor calls
+            // withAgenticScope() via the Weld scope proxy (which now exposes AgenticScopeOwner),
+            // return this proxy unchanged so execution continues without binding a child scope.
+            if (declaringClass.isAssignableFrom(AgenticScopeOwner.class)) {
+                return method.getName().equals("withAgenticScope") ? proxy : null;
             }
             return method.invoke(aiService, args);
         };
