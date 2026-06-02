@@ -80,9 +80,7 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
         Set<Annotation> annotations = new HashSet<>();
         annotations.add(new AnnotationLiteral<Default>() {});
         annotations.add(new AnnotationLiteral<Any>() {});
-        if (agentName != null) {
-            annotations.add(NamedLiteral.of(agentName));
-        }
+        annotations.add(NamedLiteral.of(getName()));
         return Collections.unmodifiableSet(annotations);
     }
 

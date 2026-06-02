@@ -150,6 +150,19 @@ public class CommonAgentCreator {
                                 }
                                 AgentComponents.resolve(ann, lookup, interfaceClass.getSimpleName())
                                         .applyTo(builder);
+                                String resolvedName = CdiLookupHelper.resolveExpression(ann.name());
+                                if (hasText(resolvedName)) {
+                                    builder.name(resolvedName);
+                                }
+                                String resolvedDescription = CdiLookupHelper.resolveExpression(ann.description());
+                                if (hasText(resolvedDescription)) {
+                                    builder.description(resolvedDescription);
+                                }
+                                String resolvedOutputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
+                                if (hasText(resolvedOutputKey)) {
+                                    builder.outputKey(resolvedOutputKey);
+                                }
+                                builder.async(ann.async());
                                 applyListener(builder::listener, ann.agentListenerName(), lookup);
                             },
                             agentClass -> {
@@ -176,7 +189,11 @@ public class CommonAgentCreator {
                     default -> method.invoke(aiService, args);
                 };
             }
-            if (InternalAgent.class.isAssignableFrom(declaringClass)) {
+            // InternalAgent extends AgentInstance, so methods declared on AgentInstance (name,
+            // outputKey, etc.) have declaringClass == AgentInstance. The reversed direction
+            // "declaringClass.isAssignableFrom(InternalAgent.class)" returns true for both
+            // InternalAgent and its supertypes, routing the full internal-method hierarchy here.
+            if (declaringClass.isAssignableFrom(InternalAgent.class)) {
                 return method.invoke(agentInstance, args);
             }
             return method.invoke(aiService, args);
@@ -425,7 +442,7 @@ public class CommonAgentCreator {
             if (HumanInTheLoopHolder.class.isAssignableFrom(declaringClass)) {
                 return spec;
             }
-            if (InternalAgent.class.isAssignableFrom(declaringClass)) {
+            if (declaringClass.isAssignableFrom(InternalAgent.class)) {
                 return method.invoke(agentInstance, args);
             }
             throw new UnsupportedOperationException(
