@@ -113,10 +113,38 @@ class CommonAgentCreatorTest {
         String chat(@V("question") String question);
     }
 
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterSimpleAgent(chatModelName = "#default", outputKey = "myKey")
+    interface AgentWithOutputKey {
+
+        String chat(@V("question") String question);
+    }
+
     // --- Test interface for SIMPLE topology (@Agent path) ---
     @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
     @RegisterSimpleAgent(chatModelName = "#default")
     interface AgenticAgent {
+
+        @Agent(description = "test agent")
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterSimpleAgent(chatModelName = "#default", outputKey = "agentOutput")
+    interface AgenticAgentWithOutputKey {
+
+        @Agent(description = "test agent")
+        String process(@V("input") String input);
+    }
+
+    @SuppressWarnings("CdiManagedBeanInconsistencyInspection")
+    @RegisterSimpleAgent(
+            chatModelName = "#default",
+            name = "myAgenticAgent",
+            description = "an agentic agent",
+            outputKey = "myOutput",
+            async = true)
+    interface AgenticAgentWithMetadata {
 
         @Agent(description = "test agent")
         String process(@V("input") String input);
@@ -530,6 +558,16 @@ class CommonAgentCreatorTest {
         assertInstanceOf(InternalAgent.class, agent);
     }
 
+    @Test
+    void create_simpleTopology_noAgentAnnotation_propagatesOutputKey() {
+        Instance<Object> lookup = prepareLookups();
+        AgentWithOutputKey agent = CommonAgentCreator.create(lookup, AgentWithOutputKey.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+        assertEquals("myKey", ((InternalAgent) agent).outputKey());
+    }
+
     // =========================================================================
     // SIMPLE topology -- @Agent path
     // =========================================================================
@@ -540,6 +578,30 @@ class CommonAgentCreatorTest {
 
         assertNotNull(agent);
         assertInstanceOf(InternalAgent.class, agent);
+    }
+
+    @Test
+    void create_simpleTopology_withAgentAnnotation_propagatesOutputKey() {
+        Instance<Object> lookup = prepareLookups();
+        AgenticAgentWithOutputKey agent = CommonAgentCreator.create(lookup, AgenticAgentWithOutputKey.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+        assertEquals("agentOutput", ((InternalAgent) agent).outputKey());
+    }
+
+    @Test
+    void create_simpleTopology_withAgentAnnotation_honorsOutputKeyNameDescriptionAsync() {
+        Instance<Object> lookup = prepareLookups();
+        AgenticAgentWithMetadata agent = CommonAgentCreator.create(lookup, AgenticAgentWithMetadata.class);
+
+        assertNotNull(agent);
+        assertInstanceOf(InternalAgent.class, agent);
+        InternalAgent ia = (InternalAgent) agent;
+        assertEquals("myAgenticAgent", ia.name());
+        assertEquals("an agentic agent", ia.description());
+        assertEquals("myOutput", ia.outputKey());
+        assertTrue(ia.async());
     }
 
     // =========================================================================
