@@ -5,6 +5,7 @@ import dev.langchain4j.agentic.internal.InternalAgent;
 import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.agent.CommonAgentCreator;
 import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
+import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Default;
@@ -73,6 +74,9 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
         types.add(agentInterfaceClass);
         types.add(InternalAgent.class);
         types.add(AgenticScopeOwner.class);
+        if (stereotypeAnnotationClass == RegisterHumanInTheLoopAgent.class) {
+            types.add(CommonAgentCreator.HumanInTheLoopHolder.class);
+        }
         types.add(Object.class);
         return Collections.unmodifiableSet(types);
     }
