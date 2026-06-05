@@ -29,6 +29,15 @@ public @interface RegisterMcpClientAgent {
 
     boolean async() default false;
 
+    /**
+     * If true, the agent's execution will be silently skipped when any of its arguments is missing in the agentic
+     * scope, instead of making the agentic system's execution fail.
+     */
+    boolean optional() default false;
+
+    /** Names of other agents whose conversation context should be summarized and injected into this agent's prompt. */
+    String[] summarizedContext() default {};
+
     String agentListenerName() default "";
 
     /** CDI bean name of the MCP client object. Required. */
