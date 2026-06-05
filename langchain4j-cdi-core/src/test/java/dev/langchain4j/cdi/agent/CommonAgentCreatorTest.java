@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.internal.AgentExecutor;
+import dev.langchain4j.agentic.internal.AgenticScopeOwner;
 import dev.langchain4j.agentic.internal.InternalAgent;
 import dev.langchain4j.agentic.internal.McpClientBuilder;
 import dev.langchain4j.agentic.internal.McpService;
@@ -1003,9 +1004,14 @@ class CommonAgentCreatorTest {
 
             McpClientAgentWithInputKeys agent = CommonAgentCreator.create(lookup, McpClientAgentWithInputKeys.class);
 
-            assertSame(mockProxy, agent);
+            assertNotNull(agent);
+            assertInstanceOf(InternalAgent.class, agent);
+            assertInstanceOf(AgenticScopeOwner.class, agent);
             verify(mcpBuilder).toolName("web_search");
             verify(mcpBuilder).inputKeys("query", "locale");
+
+            when(mockProxy.process("hello")).thenReturn("delegated");
+            assertEquals("delegated", agent.process("hello"));
         }
     }
 
@@ -1034,8 +1040,13 @@ class CommonAgentCreatorTest {
 
             McpClientAgentAsync agent = CommonAgentCreator.create(lookup, McpClientAgentAsync.class);
 
-            assertSame(mockProxy, agent);
+            assertNotNull(agent);
+            assertInstanceOf(InternalAgent.class, agent);
+            assertInstanceOf(AgenticScopeOwner.class, agent);
             verify(mcpBuilder).async(true);
+
+            when(mockProxy.process("test")).thenReturn("async-delegated");
+            assertEquals("async-delegated", agent.process("test"));
         }
     }
 
@@ -1105,6 +1116,7 @@ class CommonAgentCreatorTest {
 
         assertNotNull(agent);
         assertInstanceOf(InternalAgent.class, agent);
+        assertInstanceOf(AgenticScopeOwner.class, agent);
         InternalAgent ia = (InternalAgent) agent;
         assertEquals("human-approval-agent", ia.name());
         assertEquals("Asks human for approval", ia.description());
@@ -1131,6 +1143,7 @@ class CommonAgentCreatorTest {
 
         assertNotNull(agent);
         assertInstanceOf(InternalAgent.class, agent);
+        assertInstanceOf(AgenticScopeOwner.class, agent);
     }
 
     @Test

@@ -197,7 +197,7 @@ public class CommonAgentCreator {
             // Simple AI-service agents have no planner scope. When AgentExecutor calls
             // withAgenticScope() via the Weld scope proxy (which now exposes AgenticScopeOwner),
             // return this proxy unchanged so execution continues without binding a child scope.
-            if (declaringClass.isAssignableFrom(AgenticScopeOwner.class)) {
+            if (AgenticScopeOwner.class.isAssignableFrom(declaringClass)) {
                 return method.getName().equals("withAgenticScope") ? proxy : null;
             }
             return method.invoke(aiService, args);
@@ -353,7 +353,7 @@ public class CommonAgentCreator {
             throw new IllegalArgumentException(
                     "@RegisterA2AAgent on " + interfaceClass.getSimpleName() + ": 'a2aServerUrl' is required.");
         }
-        return loadA2ABuilder()
+        X a2aAgent = loadA2ABuilder()
                 .build(
                         interfaceClass,
                         url,
@@ -361,6 +361,7 @@ public class CommonAgentCreator {
                         ann.async(),
                         ann.agentListenerName(),
                         lookup);
+        return wrapWithAgenticScope(interfaceClass, a2aAgent);
     }
 
     private static <X> X createForMcpClient(
@@ -395,7 +396,7 @@ public class CommonAgentCreator {
         if (listener != null) {
             builder.listener(listener);
         }
-        return builder.build();
+        return wrapWithAgenticScope(interfaceClass, builder.build());
     }
 
     private static <X> X createForHumanInTheLoop(
@@ -448,13 +449,29 @@ public class CommonAgentCreator {
             if (declaringClass.isAssignableFrom(InternalAgent.class)) {
                 return method.invoke(agentInstance, args);
             }
+            if (AgenticScopeOwner.class.isAssignableFrom(declaringClass)) {
+                return method.getName().equals("withAgenticScope") ? proxy : null;
+            }
             throw new UnsupportedOperationException(
                     "HUMAN_IN_THE_LOOP agents must be invoked through the agentic system");
         };
         return (X) java.lang.reflect.Proxy.newProxyInstance(
                 interfaceClass.getClassLoader(),
-                new Class<?>[] {interfaceClass, InternalAgent.class, HumanInTheLoopHolder.class},
+                new Class<?>[] {interfaceClass, InternalAgent.class, AgenticScopeOwner.class, HumanInTheLoopHolder.class
+                },
                 handler);
+    }
+
+    /** Wraps a delegate agent proxy so the result implements {@link AgenticScopeOwner}. */
+    private static <X> X wrapWithAgenticScope(Class<X> interfaceClass, X delegate) {
+        InvocationHandler handler = (proxy, method, args) -> {
+            Class<?> declaringClass = method.getDeclaringClass();
+            if (AgenticScopeOwner.class.isAssignableFrom(declaringClass)) {
+                return method.getName().equals("withAgenticScope") ? proxy : null;
+            }
+            return method.invoke(delegate, args);
+        };
+        return AgentUtil.buildAgent(interfaceClass, handler);
     }
 
     // =========================================================================
