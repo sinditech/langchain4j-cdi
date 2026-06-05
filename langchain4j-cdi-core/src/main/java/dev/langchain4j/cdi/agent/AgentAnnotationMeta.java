@@ -1,5 +1,7 @@
 package dev.langchain4j.cdi.agent;
 
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
 import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
@@ -35,6 +37,7 @@ import java.util.Arrays;
  * @param rawName the agent name before expression resolution
  * @param rawDescription the agent description before expression resolution
  * @param rawOutputKey the output key before expression resolution
+ * @param rawTypedOutputKey the typed output key class, or {@code Agent.NoTypedKey.class} when not set
  * @param async whether the agent executes asynchronously
  * @param optional when {@code true} the agent's execution is silently skipped if any of its arguments is missing in the
  *     agentic scope, instead of failing the entire agentic system
@@ -47,6 +50,7 @@ public record AgentAnnotationMeta(
         String rawName,
         String rawDescription,
         String rawOutputKey,
+        Class<? extends TypedKey<?>> rawTypedOutputKey,
         boolean async,
         boolean optional,
         String[] rawSummarizedContext,
@@ -74,6 +78,7 @@ public record AgentAnnotationMeta(
                     simple.name(),
                     simple.description(),
                     simple.outputKey(),
+                    simple.typedOutputKey(),
                     simple.async(),
                     simple.optional(),
                     simple.summarizedContext(),
@@ -86,6 +91,7 @@ public record AgentAnnotationMeta(
                     seq.name(),
                     seq.description(),
                     seq.outputKey(),
+                    seq.typedOutputKey(),
                     false,
                     seq.optional(),
                     seq.summarizedContext(),
@@ -98,6 +104,7 @@ public record AgentAnnotationMeta(
                     loop.name(),
                     loop.description(),
                     loop.outputKey(),
+                    loop.typedOutputKey(),
                     false,
                     loop.optional(),
                     loop.summarizedContext(),
@@ -110,6 +117,7 @@ public record AgentAnnotationMeta(
                     parallel.name(),
                     parallel.description(),
                     parallel.outputKey(),
+                    parallel.typedOutputKey(),
                     false,
                     parallel.optional(),
                     parallel.summarizedContext(),
@@ -122,6 +130,7 @@ public record AgentAnnotationMeta(
                     mapper.name(),
                     mapper.description(),
                     mapper.outputKey(),
+                    mapper.typedOutputKey(),
                     false,
                     mapper.optional(),
                     mapper.summarizedContext(),
@@ -134,6 +143,7 @@ public record AgentAnnotationMeta(
                     cond.name(),
                     cond.description(),
                     cond.outputKey(),
+                    cond.typedOutputKey(),
                     false,
                     cond.optional(),
                     cond.summarizedContext(),
@@ -146,6 +156,7 @@ public record AgentAnnotationMeta(
                     supervisor.name(),
                     supervisor.description(),
                     supervisor.outputKey(),
+                    supervisor.typedOutputKey(),
                     false,
                     supervisor.optional(),
                     supervisor.summarizedContext(),
@@ -158,6 +169,7 @@ public record AgentAnnotationMeta(
                     planner.name(),
                     planner.description(),
                     planner.outputKey(),
+                    planner.typedOutputKey(),
                     false,
                     planner.optional(),
                     planner.summarizedContext(),
@@ -170,6 +182,7 @@ public record AgentAnnotationMeta(
                     a2a.name(),
                     a2a.description(),
                     a2a.outputKey(),
+                    a2a.typedOutputKey(),
                     a2a.async(),
                     a2a.optional(),
                     a2a.summarizedContext(),
@@ -182,6 +195,7 @@ public record AgentAnnotationMeta(
                     mcp.name(),
                     mcp.description(),
                     mcp.outputKey(),
+                    mcp.typedOutputKey(),
                     mcp.async(),
                     mcp.optional(),
                     mcp.summarizedContext(),
@@ -194,6 +208,7 @@ public record AgentAnnotationMeta(
                     hitl.name(),
                     hitl.description(),
                     hitl.outputKey(),
+                    hitl.typedOutputKey(),
                     hitl.async(),
                     hitl.optional(),
                     hitl.summarizedContext(),
@@ -222,6 +237,11 @@ public record AgentAnnotationMeta(
     /** Expression-resolved output key, equivalent to the annotation's {@code outputKey()} after EL/Config expansion. */
     public String outputKey() {
         return CdiLookupHelper.resolveExpression(rawOutputKey);
+    }
+
+    /** Returns {@code true} when a typed output key class other than {@link Agent.NoTypedKey} is set. */
+    public boolean hasTypedOutputKey() {
+        return rawTypedOutputKey != null && rawTypedOutputKey != Agent.NoTypedKey.class;
     }
 
     /**

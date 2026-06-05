@@ -2,6 +2,8 @@ package dev.langchain4j.cdi.spi;
 
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.guardrail.InputGuardrail;
 import dev.langchain4j.guardrail.OutputGuardrail;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -30,6 +32,8 @@ public @interface RegisterSimpleAgent {
     String description() default "";
 
     String outputKey() default "";
+
+    Class<? extends TypedKey<?>> typedOutputKey() default Agent.NoTypedKey.class;
 
     boolean async() default false;
 

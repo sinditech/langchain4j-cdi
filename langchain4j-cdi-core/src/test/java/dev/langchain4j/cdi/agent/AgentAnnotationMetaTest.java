@@ -2,6 +2,8 @@ package dev.langchain4j.cdi.agent;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
 import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
@@ -81,6 +83,19 @@ class AgentAnnotationMetaTest {
             optional = true,
             summarizedContext = {"writer"})
     interface OptionalSequenceInterface {}
+
+    static class ResultKey implements TypedKey<String> {
+        @Override
+        public String name() {
+            return "typedResult";
+        }
+    }
+
+    @RegisterSimpleAgent(name = "typedSimple", description = "typed simple", typedOutputKey = ResultKey.class)
+    interface TypedSimpleInterface {}
+
+    @RegisterSequenceAgent(name = "typedSeq", typedOutputKey = ResultKey.class)
+    interface TypedSequenceInterface {}
 
     interface PlainInterface {}
 
@@ -240,6 +255,63 @@ class AgentAnnotationMetaTest {
 
         assertNotNull(meta);
         assertEquals(meta.rawOutputKey(), meta.outputKey());
+    }
+
+    // =========================================================================
+    // typedOutputKey
+    // =========================================================================
+
+    @Test
+    void detect_typedOutputKey_extractsClass() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(TypedSimpleInterface.class);
+
+        assertNotNull(meta);
+        assertEquals(ResultKey.class, meta.rawTypedOutputKey());
+        assertTrue(meta.hasTypedOutputKey());
+    }
+
+    @Test
+    void detect_typedOutputKey_composedAgent() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(TypedSequenceInterface.class);
+
+        assertNotNull(meta);
+        assertEquals(ResultKey.class, meta.rawTypedOutputKey());
+        assertTrue(meta.hasTypedOutputKey());
+    }
+
+    @Test
+    void detect_defaultTypedOutputKey_isNoTypedKey() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(SimpleInterface.class);
+
+        assertNotNull(meta);
+        assertEquals(Agent.NoTypedKey.class, meta.rawTypedOutputKey());
+        assertFalse(meta.hasTypedOutputKey());
+    }
+
+    @Test
+    void detect_allDefaultAnnotations_haveNoTypedOutputKey() {
+        assertAll(
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(SimpleInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(SequenceInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(LoopInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(ParallelInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(AgentAnnotationMeta.detect(ParallelMapperInterface.class)
+                        .hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(ConditionalInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(SupervisorInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(PlannerInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(AgentAnnotationMeta.detect(A2AInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(McpClientInterface.class).hasTypedOutputKey()),
+                () -> assertFalse(AgentAnnotationMeta.detect(HumanInTheLoopInterface.class)
+                        .hasTypedOutputKey()));
     }
 
     // =========================================================================
