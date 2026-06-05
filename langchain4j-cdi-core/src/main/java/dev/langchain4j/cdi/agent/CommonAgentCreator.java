@@ -6,6 +6,7 @@ import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.agentic.agent.AgentBuilder;
 import dev.langchain4j.agentic.declarative.PlannerSupplier;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.agentic.internal.AgentExecutor;
 import dev.langchain4j.agentic.internal.AgentInvoker;
 import dev.langchain4j.agentic.internal.AgentUtil;
@@ -156,9 +157,14 @@ public class CommonAgentCreator {
                                 if (hasText(resolvedDescription)) {
                                     builder.description(resolvedDescription);
                                 }
-                                String resolvedOutputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
-                                if (hasText(resolvedOutputKey)) {
-                                    builder.outputKey(resolvedOutputKey);
+                                if (ann.typedOutputKey() != Agent.NoTypedKey.class) {
+                                    warnIfBothOutputKeysSet(ann.outputKey(), ann.typedOutputKey());
+                                    builder.outputKey(ann.typedOutputKey());
+                                } else {
+                                    String resolvedOutputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
+                                    if (hasText(resolvedOutputKey)) {
+                                        builder.outputKey(resolvedOutputKey);
+                                    }
                                 }
                                 builder.async(ann.async());
                                 builder.optional(ann.optional());
@@ -174,7 +180,7 @@ public class CommonAgentCreator {
         X aiService = buildAiServiceForSimple(interfaceClass, ann, chatModel, streamingChatModel, lookup);
         String description = CdiLookupHelper.resolveExpression(ann.description());
         if (!hasText(description)) description = "";
-        String outputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
+        String outputKey = resolveOutputKey(ann.typedOutputKey(), ann.outputKey());
         if (!hasText(outputKey)) outputKey = "";
         AgentListener listener = CdiLookupHelper.resolveSingle(lookup, AgentListener.class, ann.agentListenerName());
         NonAiAgentInstance agentInstance = buildNonAiAgentInstance(
@@ -231,6 +237,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -250,6 +257,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -262,6 +270,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -281,6 +290,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -293,6 +303,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -318,14 +329,17 @@ public class CommonAgentCreator {
             builder.supervisorContext(supervisorContext);
         }
         List<Object> subAgents = resolveSubAgents(lookup, ann.subAgentNames());
+        String resolvedOutputKey = resolveOutputKey(ann.typedOutputKey(), ann.outputKey());
         configureCommonFields(
                 builder::subAgents,
                 builder::name,
                 builder::description,
                 builder::outputKey,
+                null,
                 ann.name(),
                 ann.description(),
-                ann.outputKey(),
+                resolvedOutputKey,
+                Agent.NoTypedKey.class,
                 subAgents);
         applyListener(builder::listener, ann.agentListenerName(), lookup);
         return builder.build();
@@ -344,6 +358,7 @@ public class CommonAgentCreator {
                 ann.name(),
                 ann.description(),
                 ann.outputKey(),
+                ann.typedOutputKey(),
                 ann.subAgentNames(),
                 ann.agentListenerName(),
                 lookup);
@@ -355,15 +370,9 @@ public class CommonAgentCreator {
             throw new IllegalArgumentException(
                     "@RegisterA2AAgent on " + interfaceClass.getSimpleName() + ": 'a2aServerUrl' is required.");
         }
+        String outputKey = resolveOutputKey(ann.typedOutputKey(), ann.outputKey());
         X a2aAgent = loadA2ABuilder()
-                .build(
-                        interfaceClass,
-                        url,
-                        CdiLookupHelper.resolveExpression(ann.outputKey()),
-                        ann.async(),
-                        ann.optional(),
-                        ann.agentListenerName(),
-                        lookup);
+                .build(interfaceClass, url, outputKey, ann.async(), ann.optional(), ann.agentListenerName(), lookup);
         return wrapWithAgenticScope(interfaceClass, a2aAgent);
     }
 
@@ -390,7 +399,7 @@ public class CommonAgentCreator {
         if (ann.mcpInputKeys().length > 0) {
             builder.inputKeys(ann.mcpInputKeys());
         }
-        String outputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
+        String outputKey = resolveOutputKey(ann.typedOutputKey(), ann.outputKey());
         if (hasText(outputKey)) {
             builder.outputKey(outputKey);
         }
@@ -419,7 +428,7 @@ public class CommonAgentCreator {
                 throw new RuntimeException(cause);
             }
         });
-        String outputKey = CdiLookupHelper.resolveExpression(ann.outputKey());
+        String outputKey = resolveOutputKey(ann.typedOutputKey(), ann.outputKey());
         if (hasText(outputKey)) {
             builder.outputKey(outputKey);
         }
@@ -558,6 +567,7 @@ public class CommonAgentCreator {
             String name,
             String description,
             String outputKey,
+            Class<? extends TypedKey<?>> typedOutputKey,
             String[] subAgentNames,
             String agentListenerName,
             Instance<Object> lookup) {
@@ -567,9 +577,11 @@ public class CommonAgentCreator {
                 builder::name,
                 builder::description,
                 builder::outputKey,
+                typedOutputKey != Agent.NoTypedKey.class ? builder::outputKey : null,
                 name,
                 description,
                 outputKey,
+                typedOutputKey,
                 subAgents);
         applyListener(builder::listener, agentListenerName, lookup);
         return builder.build();
@@ -580,9 +592,11 @@ public class CommonAgentCreator {
             Consumer<String> nameSetter,
             Consumer<String> descriptionSetter,
             Consumer<String> outputKeySetter,
+            Consumer<Class<? extends TypedKey<?>>> typedOutputKeySetter,
             String rawName,
             String rawDescription,
             String rawOutputKey,
+            Class<? extends TypedKey<?>> typedOutputKey,
             List<Object> subAgents) {
         if (!subAgents.isEmpty()) {
             subAgentsSetter.accept(subAgents);
@@ -595,9 +609,53 @@ public class CommonAgentCreator {
         if (hasText(description)) {
             descriptionSetter.accept(description);
         }
-        String outputKey = CdiLookupHelper.resolveExpression(rawOutputKey);
-        if (hasText(outputKey)) {
-            outputKeySetter.accept(outputKey);
+        if (typedOutputKey != null && typedOutputKey != Agent.NoTypedKey.class) {
+            warnIfBothOutputKeysSet(rawOutputKey, typedOutputKey);
+            if (typedOutputKeySetter != null) {
+                typedOutputKeySetter.accept(typedOutputKey);
+            } else {
+                String resolved = resolveTypedKeyName(typedOutputKey);
+                if (hasText(resolved)) {
+                    outputKeySetter.accept(resolved);
+                }
+            }
+        } else {
+            String outputKey = CdiLookupHelper.resolveExpression(rawOutputKey);
+            if (hasText(outputKey)) {
+                outputKeySetter.accept(outputKey);
+            }
+        }
+    }
+
+    static String resolveOutputKey(Class<? extends TypedKey<?>> typedOutputKey, String rawOutputKey) {
+        if (typedOutputKey != null && typedOutputKey != Agent.NoTypedKey.class) {
+            warnIfBothOutputKeysSet(rawOutputKey, typedOutputKey);
+            return resolveTypedKeyName(typedOutputKey);
+        }
+        return CdiLookupHelper.resolveExpression(rawOutputKey);
+    }
+
+    private static void warnIfBothOutputKeysSet(String rawOutputKey, Class<? extends TypedKey<?>> typedOutputKey) {
+        if (hasText(rawOutputKey)) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Both outputKey (''{0}'') and typedOutputKey ({1}) are set; typedOutputKey takes precedence",
+                    new Object[] {rawOutputKey, typedOutputKey.getName()});
+        }
+    }
+
+    static String resolveTypedKeyName(Class<? extends TypedKey<?>> typedKeyClass) {
+        try {
+            TypedKey<?> instance = typedKeyClass.getDeclaredConstructor().newInstance();
+            String name = instance.name();
+            return hasText(name) ? name : typedKeyClass.getSimpleName();
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    e,
+                    () -> "Cannot instantiate TypedKey class " + typedKeyClass.getName()
+                            + " (no accessible no-arg constructor?), falling back to simple class name");
+            return typedKeyClass.getSimpleName();
         }
     }
 
@@ -939,7 +997,7 @@ public class CommonAgentCreator {
         String resolvedName = meta.name();
         String name = hasText(resolvedName) ? resolvedName : entryMethod.getName();
         String desc = meta.description();
-        String outputKey = meta.outputKey();
+        String outputKey = resolveOutputKey(meta.rawTypedOutputKey(), meta.rawOutputKey());
         boolean async = meta.async();
         boolean optional = meta.optional();
         AgentInvoker invoker;

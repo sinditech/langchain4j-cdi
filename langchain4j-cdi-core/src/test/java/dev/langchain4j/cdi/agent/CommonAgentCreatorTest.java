@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.agentic.internal.AgentExecutor;
 import dev.langchain4j.agentic.internal.AgenticScopeOwner;
 import dev.langchain4j.agentic.internal.InternalAgent;
@@ -45,8 +46,14 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.literal.NamedLiteral;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -476,6 +483,46 @@ class CommonAgentCreatorTest {
     interface McpClientAgentAsync {
 
         String process(@V("input") String input);
+    }
+
+    // --- TypedKey classes for resolveTypedKeyName tests ---
+    static class NamedTypedKey implements TypedKey<String> {
+
+        @Override
+        public String name() {
+            return "myTypedKey";
+        }
+    }
+
+    static class BlankNameTypedKey implements TypedKey<String> {
+
+        @Override
+        public String name() {
+            return "";
+        }
+    }
+
+    static class NullNameTypedKey implements TypedKey<String> {
+
+        @Override
+        public String name() {
+            return null;
+        }
+    }
+
+    static class NoDefaultConstructorTypedKey implements TypedKey<String> {
+
+        @SuppressWarnings("unused")
+        private final String value;
+
+        NoDefaultConstructorTypedKey(String value) {
+            this.value = value;
+        }
+
+        @Override
+        public String name() {
+            return "unreachable";
+        }
     }
 
     // --- Missing annotation ---
@@ -1458,6 +1505,89 @@ class CommonAgentCreatorTest {
         ExpressionNamedAgent agent = CommonAgentCreator.create(lookup, ExpressionNamedAgent.class);
         assertNotNull(agent);
         assertTrue(agent.toString().contains("Agent[myAgent]"));
+    }
+
+    // =========================================================================
+    // resolveTypedKeyName
+    // =========================================================================
+    @Test
+    void resolveTypedKeyName_withNamedKey_returnsName() {
+        String result = CommonAgentCreator.resolveTypedKeyName(NamedTypedKey.class);
+        assertEquals("myTypedKey", result);
+    }
+
+    @Test
+    void resolveTypedKeyName_withBlankName_fallsBackToSimpleName() {
+        String result = CommonAgentCreator.resolveTypedKeyName(BlankNameTypedKey.class);
+        assertEquals("BlankNameTypedKey", result);
+    }
+
+    @Test
+    void resolveTypedKeyName_withNullName_fallsBackToSimpleName() {
+        String result = CommonAgentCreator.resolveTypedKeyName(NullNameTypedKey.class);
+        assertEquals("NullNameTypedKey", result);
+    }
+
+    @Test
+    void resolveTypedKeyName_withNoDefaultConstructor_fallsBackToSimpleName() {
+        String result = CommonAgentCreator.resolveTypedKeyName(NoDefaultConstructorTypedKey.class);
+        assertEquals("NoDefaultConstructorTypedKey", result);
+    }
+
+    // =========================================================================
+    // resolveOutputKey
+    // =========================================================================
+    @Test
+    void resolveOutputKey_typedKeyTakesPrecedence() {
+        String result = CommonAgentCreator.resolveOutputKey(NamedTypedKey.class, "");
+        assertEquals("myTypedKey", result);
+    }
+
+    @Test
+    void resolveOutputKey_fallsBackToStringOutputKey() {
+        String result = CommonAgentCreator.resolveOutputKey(Agent.NoTypedKey.class, "stringKey");
+        assertEquals("stringKey", result);
+    }
+
+    @Test
+    void resolveOutputKey_nullTypedKey_fallsBackToStringOutputKey() {
+        String result = CommonAgentCreator.resolveOutputKey(null, "stringKey");
+        assertEquals("stringKey", result);
+    }
+
+    @Test
+    void resolveOutputKey_bothEmpty_returnsEmpty() {
+        String result = CommonAgentCreator.resolveOutputKey(Agent.NoTypedKey.class, "");
+        assertEquals("", result);
+    }
+
+    @Test
+    void resolveOutputKey_bothSet_warnsAndTypedKeyWins() {
+        Logger logger = Logger.getLogger(CommonAgentCreator.class.getName());
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            String result = CommonAgentCreator.resolveOutputKey(NamedTypedKey.class, "stringKey");
+            assertEquals("myTypedKey", result);
+            assertEquals(1, records.size());
+            LogRecord record = records.get(0);
+            assertEquals(Level.WARNING, record.getLevel());
+            assertTrue(record.getMessage().contains("typedOutputKey takes precedence"));
+        } finally {
+            logger.removeHandler(handler);
+        }
     }
 
     // =========================================================================

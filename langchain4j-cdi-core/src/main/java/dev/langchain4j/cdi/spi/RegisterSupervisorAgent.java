@@ -2,6 +2,8 @@ package dev.langchain4j.cdi.spi;
 
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.TypedKey;
 import dev.langchain4j.agentic.supervisor.SupervisorContextStrategy;
 import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -24,6 +26,8 @@ public @interface RegisterSupervisorAgent {
     String description() default "";
 
     String outputKey() default "";
+
+    Class<? extends TypedKey<?>> typedOutputKey() default Agent.NoTypedKey.class;
 
     /**
      * If true, the agent's execution will be silently skipped when any of its arguments is missing in the agentic
