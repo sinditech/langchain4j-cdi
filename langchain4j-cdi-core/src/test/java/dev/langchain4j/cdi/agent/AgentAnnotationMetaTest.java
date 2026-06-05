@@ -69,6 +69,19 @@ class AgentAnnotationMetaTest {
     @RegisterHumanInTheLoopAgent(name = "hitl", description = "hitl desc", outputKey = "hitlOut", async = true)
     interface HumanInTheLoopInterface {}
 
+    @RegisterSimpleAgent(
+            name = "optSimple",
+            description = "optional simple",
+            optional = true,
+            summarizedContext = {"agentA", "agentB"})
+    interface OptionalSimpleInterface {}
+
+    @RegisterSequenceAgent(
+            name = "optSeq",
+            optional = true,
+            summarizedContext = {"writer"})
+    interface OptionalSequenceInterface {}
+
     interface PlainInterface {}
 
     // =========================================================================
@@ -257,5 +270,72 @@ class AgentAnnotationMetaTest {
     @Test
     void isAgentInterface_annotatedClass_returnsFalse() {
         assertFalse(AgentAnnotationMeta.isAgentInterface(Object.class));
+    }
+
+    // =========================================================================
+    // optional() and summarizedContext()
+    // =========================================================================
+
+    @Test
+    void detect_simpleAgent_defaultOptionalIsFalse() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(SimpleInterface.class);
+
+        assertNotNull(meta);
+        assertFalse(meta.optional());
+        assertArrayEquals(new String[0], meta.summarizedContext());
+    }
+
+    @Test
+    void detect_optionalSimple_setsOptionalAndSummarizedContext() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(OptionalSimpleInterface.class);
+
+        assertNotNull(meta);
+        assertTrue(meta.optional());
+        assertArrayEquals(new String[] {"agentA", "agentB"}, meta.rawSummarizedContext());
+        assertArrayEquals(new String[] {"agentA", "agentB"}, meta.summarizedContext());
+    }
+
+    @Test
+    void detect_optionalSequence_setsOptionalAndSummarizedContext() {
+        AgentAnnotationMeta meta = AgentAnnotationMeta.detect(OptionalSequenceInterface.class);
+
+        assertNotNull(meta);
+        assertTrue(meta.optional());
+        assertArrayEquals(new String[] {"writer"}, meta.summarizedContext());
+    }
+
+    @Test
+    void detect_composedAgentDefault_optionalIsFalse() {
+        assertAll(
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(SequenceInterface.class).optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(LoopInterface.class).optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(ParallelInterface.class).optional()),
+                () -> assertFalse(AgentAnnotationMeta.detect(ParallelMapperInterface.class)
+                        .optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(ConditionalInterface.class).optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(SupervisorInterface.class).optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(PlannerInterface.class).optional()),
+                () -> assertFalse(AgentAnnotationMeta.detect(A2AInterface.class).optional()),
+                () -> assertFalse(
+                        AgentAnnotationMeta.detect(McpClientInterface.class).optional()),
+                () -> assertFalse(AgentAnnotationMeta.detect(HumanInTheLoopInterface.class)
+                        .optional()));
+    }
+
+    @Test
+    void detect_composedAgentDefault_summarizedContextIsEmpty() {
+        assertAll(
+                () -> assertEquals(
+                        0, AgentAnnotationMeta.detect(SequenceInterface.class).summarizedContext().length),
+                () -> assertEquals(
+                        0, AgentAnnotationMeta.detect(LoopInterface.class).summarizedContext().length),
+                () -> assertEquals(
+                        0, AgentAnnotationMeta.detect(A2AInterface.class).summarizedContext().length));
     }
 }

@@ -13,6 +13,7 @@ import dev.langchain4j.cdi.spi.RegisterSequenceAgent;
 import dev.langchain4j.cdi.spi.RegisterSimpleAgent;
 import dev.langchain4j.cdi.spi.RegisterSupervisorAgent;
 import java.lang.annotation.Annotation;
+import java.util.Arrays;
 
 /**
  * Extracts CDI metadata from any of the 11 agent stereotype annotations: {@link RegisterSimpleAgent},
@@ -29,6 +30,17 @@ import java.lang.annotation.Annotation;
  * <p><b>API note:</b> this record is part of the stable public API of {@code langchain4j-cdi-core}, alongside the
  * annotations in {@code dev.langchain4j.cdi.spi}. It lives in the {@code dev.langchain4j.cdi.agent} package for
  * historical reasons; treat it as public and stable.
+ *
+ * @param scope the CDI scope annotation class (e.g. {@code ApplicationScoped.class})
+ * @param rawName the agent name before expression resolution
+ * @param rawDescription the agent description before expression resolution
+ * @param rawOutputKey the output key before expression resolution
+ * @param async whether the agent executes asynchronously
+ * @param optional when {@code true} the agent's execution is silently skipped if any of its arguments is missing in the
+ *     agentic scope, instead of failing the entire agentic system
+ * @param rawSummarizedContext names of other agents whose conversation context should be summarized and injected into
+ *     this agent's prompt, before expression resolution
+ * @param annotationClass the concrete stereotype annotation class that was detected
  */
 public record AgentAnnotationMeta(
         Class<? extends Annotation> scope,
@@ -36,6 +48,8 @@ public record AgentAnnotationMeta(
         String rawDescription,
         String rawOutputKey,
         boolean async,
+        boolean optional,
+        String[] rawSummarizedContext,
         Class<? extends Annotation> annotationClass) {
 
     /**
@@ -61,17 +75,33 @@ public record AgentAnnotationMeta(
                     simple.description(),
                     simple.outputKey(),
                     simple.async(),
+                    simple.optional(),
+                    simple.summarizedContext(),
                     RegisterSimpleAgent.class);
 
         RegisterSequenceAgent seq = interfaceClass.getAnnotation(RegisterSequenceAgent.class);
         if (seq != null)
             return new AgentAnnotationMeta(
-                    seq.scope(), seq.name(), seq.description(), seq.outputKey(), false, RegisterSequenceAgent.class);
+                    seq.scope(),
+                    seq.name(),
+                    seq.description(),
+                    seq.outputKey(),
+                    false,
+                    seq.optional(),
+                    seq.summarizedContext(),
+                    RegisterSequenceAgent.class);
 
         RegisterLoopAgent loop = interfaceClass.getAnnotation(RegisterLoopAgent.class);
         if (loop != null)
             return new AgentAnnotationMeta(
-                    loop.scope(), loop.name(), loop.description(), loop.outputKey(), false, RegisterLoopAgent.class);
+                    loop.scope(),
+                    loop.name(),
+                    loop.description(),
+                    loop.outputKey(),
+                    false,
+                    loop.optional(),
+                    loop.summarizedContext(),
+                    RegisterLoopAgent.class);
 
         RegisterParallelAgent parallel = interfaceClass.getAnnotation(RegisterParallelAgent.class);
         if (parallel != null)
@@ -81,6 +111,8 @@ public record AgentAnnotationMeta(
                     parallel.description(),
                     parallel.outputKey(),
                     false,
+                    parallel.optional(),
+                    parallel.summarizedContext(),
                     RegisterParallelAgent.class);
 
         RegisterParallelMapperAgent mapper = interfaceClass.getAnnotation(RegisterParallelMapperAgent.class);
@@ -91,6 +123,8 @@ public record AgentAnnotationMeta(
                     mapper.description(),
                     mapper.outputKey(),
                     false,
+                    mapper.optional(),
+                    mapper.summarizedContext(),
                     RegisterParallelMapperAgent.class);
 
         RegisterConditionalAgent cond = interfaceClass.getAnnotation(RegisterConditionalAgent.class);
@@ -101,6 +135,8 @@ public record AgentAnnotationMeta(
                     cond.description(),
                     cond.outputKey(),
                     false,
+                    cond.optional(),
+                    cond.summarizedContext(),
                     RegisterConditionalAgent.class);
 
         RegisterSupervisorAgent supervisor = interfaceClass.getAnnotation(RegisterSupervisorAgent.class);
@@ -111,6 +147,8 @@ public record AgentAnnotationMeta(
                     supervisor.description(),
                     supervisor.outputKey(),
                     false,
+                    supervisor.optional(),
+                    supervisor.summarizedContext(),
                     RegisterSupervisorAgent.class);
 
         RegisterPlannerAgent planner = interfaceClass.getAnnotation(RegisterPlannerAgent.class);
@@ -121,12 +159,21 @@ public record AgentAnnotationMeta(
                     planner.description(),
                     planner.outputKey(),
                     false,
+                    planner.optional(),
+                    planner.summarizedContext(),
                     RegisterPlannerAgent.class);
 
         RegisterA2AAgent a2a = interfaceClass.getAnnotation(RegisterA2AAgent.class);
         if (a2a != null)
             return new AgentAnnotationMeta(
-                    a2a.scope(), a2a.name(), a2a.description(), a2a.outputKey(), a2a.async(), RegisterA2AAgent.class);
+                    a2a.scope(),
+                    a2a.name(),
+                    a2a.description(),
+                    a2a.outputKey(),
+                    a2a.async(),
+                    a2a.optional(),
+                    a2a.summarizedContext(),
+                    RegisterA2AAgent.class);
 
         RegisterMcpClientAgent mcp = interfaceClass.getAnnotation(RegisterMcpClientAgent.class);
         if (mcp != null)
@@ -136,6 +183,8 @@ public record AgentAnnotationMeta(
                     mcp.description(),
                     mcp.outputKey(),
                     mcp.async(),
+                    mcp.optional(),
+                    mcp.summarizedContext(),
                     RegisterMcpClientAgent.class);
 
         RegisterHumanInTheLoopAgent hitl = interfaceClass.getAnnotation(RegisterHumanInTheLoopAgent.class);
@@ -146,6 +195,8 @@ public record AgentAnnotationMeta(
                     hitl.description(),
                     hitl.outputKey(),
                     hitl.async(),
+                    hitl.optional(),
+                    hitl.summarizedContext(),
                     RegisterHumanInTheLoopAgent.class);
 
         return null;
@@ -171,5 +222,18 @@ public record AgentAnnotationMeta(
     /** Expression-resolved output key, equivalent to the annotation's {@code outputKey()} after EL/Config expansion. */
     public String outputKey() {
         return CdiLookupHelper.resolveExpression(rawOutputKey);
+    }
+
+    /**
+     * Expression-resolved summarized context agent names, equivalent to the annotation's {@code summarizedContext()}
+     * after EL/Config expansion on each element.
+     */
+    public String[] summarizedContext() {
+        if (rawSummarizedContext == null || rawSummarizedContext.length == 0) {
+            return new String[0];
+        }
+        return Arrays.stream(rawSummarizedContext)
+                .map(CdiLookupHelper::resolveExpression)
+                .toArray(String[]::new);
     }
 }

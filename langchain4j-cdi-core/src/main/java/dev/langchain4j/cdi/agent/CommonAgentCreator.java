@@ -161,6 +161,8 @@ public class CommonAgentCreator {
                                     builder.outputKey(resolvedOutputKey);
                                 }
                                 builder.async(ann.async());
+                                builder.optional(ann.optional());
+                                applySummarizedContext(builder::summarizedContext, ann.summarizedContext());
                                 applyListener(builder::listener, ann.agentListenerName(), lookup);
                             },
                             agentClass -> {
@@ -176,7 +178,7 @@ public class CommonAgentCreator {
         if (!hasText(outputKey)) outputKey = "";
         AgentListener listener = CdiLookupHelper.resolveSingle(lookup, AgentListener.class, ann.agentListenerName());
         NonAiAgentInstance agentInstance = buildNonAiAgentInstance(
-                interfaceClass, entryMethod, ann.name(), description, outputKey, ann.async(), listener);
+                interfaceClass, entryMethod, ann.name(), description, outputKey, ann.async(), ann.optional(), listener);
         InvocationHandler handler = (proxy, method, args) -> {
             Class<?> declaringClass = method.getDeclaringClass();
             if (declaringClass == Object.class) {
@@ -359,6 +361,7 @@ public class CommonAgentCreator {
                         url,
                         CdiLookupHelper.resolveExpression(ann.outputKey()),
                         ann.async(),
+                        ann.optional(),
                         ann.agentListenerName(),
                         lookup);
         return wrapWithAgenticScope(interfaceClass, a2aAgent);
@@ -432,7 +435,7 @@ public class CommonAgentCreator {
         HumanInTheLoop spec = builder.build();
         Method entryMethod = findEntryMethod(interfaceClass);
         NonAiAgentInstance agentInstance = buildNonAiAgentInstance(
-                interfaceClass, entryMethod, ann.name(), description, outputKey, ann.async(), listener);
+                interfaceClass, entryMethod, ann.name(), description, outputKey, ann.async(), ann.optional(), listener);
         InvocationHandler handler = (proxy, method, args) -> {
             Class<?> declaringClass = method.getDeclaringClass();
             if (declaringClass == Object.class) {
@@ -494,12 +497,24 @@ public class CommonAgentCreator {
             String description,
             String outputKey,
             boolean async,
+            boolean optional,
             AgentListener listener) {
         String name = CdiLookupHelper.resolveExpression(rawName);
         if (!hasText(name)) {
             name = entryMethod != null ? entryMethod.getName() : interfaceClass.getSimpleName();
         }
         List<AgentArgument> arguments = entryMethod != null ? AgentUtil.argumentsFromMethod(entryMethod) : List.of();
+        if (optional) {
+            return new OptionalNonAiAgentInstance(
+                    interfaceClass,
+                    name,
+                    description,
+                    entryMethod != null ? entryMethod.getGenericReturnType() : String.class,
+                    outputKey,
+                    async,
+                    arguments,
+                    listener);
+        }
         return new NonAiAgentInstance(
                 interfaceClass,
                 name,
@@ -509,6 +524,32 @@ public class CommonAgentCreator {
                 async,
                 arguments,
                 listener);
+    }
+
+    /**
+     * Extends {@link NonAiAgentInstance} to override {@link #optional()} so that non-AI agent proxies can report
+     * themselves as optional. The upstream class does not expose an {@code optional} field; its
+     * {@link dev.langchain4j.agentic.planner.AgentInstance#optional() AgentInstance.optional()} default returns
+     * {@code false}.
+     */
+    private static class OptionalNonAiAgentInstance extends NonAiAgentInstance {
+
+        OptionalNonAiAgentInstance(
+                Class<?> type,
+                String name,
+                String description,
+                java.lang.reflect.Type outputType,
+                String outputKey,
+                boolean async,
+                List<AgentArgument> arguments,
+                AgentListener listener) {
+            super(type, name, description, outputType, outputKey, async, arguments, listener);
+        }
+
+        @Override
+        public boolean optional() {
+            return true;
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -565,6 +606,19 @@ public class CommonAgentCreator {
         AgentListener listener = CdiLookupHelper.resolveSingle(lookup, AgentListener.class, agentListenerName);
         if (listener != null) {
             setter.accept(listener);
+        }
+    }
+
+    private static void applySummarizedContext(Consumer<String[]> setter, String[] rawSummarizedContext) {
+        if (rawSummarizedContext == null || rawSummarizedContext.length == 0) {
+            return;
+        }
+        String[] resolved = Arrays.stream(rawSummarizedContext)
+                .map(CdiLookupHelper::resolveExpression)
+                .filter(s -> hasText(s))
+                .toArray(String[]::new);
+        if (resolved.length > 0) {
+            setter.accept(resolved);
         }
     }
 
@@ -887,7 +941,16 @@ public class CommonAgentCreator {
         String desc = meta.description();
         String outputKey = meta.outputKey();
         boolean async = meta.async();
-        AgentInvoker invoker = AgentUtil.nonAiAgentInvoker(entryMethod, name, desc, outputKey, async);
+        boolean optional = meta.optional();
+        AgentInvoker invoker;
+        if (optional) {
+            List<AgentArgument> arguments = AgentUtil.argumentsFromMethod(entryMethod);
+            NonAiAgentInstance agent = new OptionalNonAiAgentInstance(
+                    iface, name, desc, entryMethod.getGenericReturnType(), outputKey, async, arguments, null);
+            invoker = AgentInvoker.fromMethod(agent, entryMethod);
+        } else {
+            invoker = AgentUtil.nonAiAgentInvoker(entryMethod, name, desc, outputKey, async);
+        }
         return new AgentExecutor(invoker, ia);
     }
 
