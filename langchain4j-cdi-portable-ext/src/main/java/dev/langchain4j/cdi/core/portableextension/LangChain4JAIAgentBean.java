@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
+public class LangChain4JAIAgentBean<T> implements Bean<T>, InterceptorBeanAttributes<T>, PassivationCapable {
 
     private final Class<T> agentInterfaceClass;
     private final BeanManager beanManager;
@@ -125,6 +125,7 @@ public class LangChain4JAIAgentBean<T> implements Bean<T>, PassivationCapable {
         return Collections.emptySet();
     }
 
+    @Override
     public Set<Annotation> getInterceptorBindings() {
         if (interceptorBindings == null) interceptorBindings = new HashSet<>();
         return interceptorBindings;

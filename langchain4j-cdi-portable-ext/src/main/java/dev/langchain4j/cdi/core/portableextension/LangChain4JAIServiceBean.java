@@ -22,7 +22,7 @@ import java.util.Set;
  * @author Buhake Sindi
  * @since 21 November 2024
  */
-public class LangChain4JAIServiceBean<T> implements Bean<T>, PassivationCapable {
+public class LangChain4JAIServiceBean<T> implements Bean<T>, InterceptorBeanAttributes<T>, PassivationCapable {
 
     private final Class<T> aiServiceInterfaceClass;
 
@@ -165,6 +165,7 @@ public class LangChain4JAIServiceBean<T> implements Bean<T>, PassivationCapable 
     }
 
     /** @return the interceptorBindings */
+    @Override
     public Set<Annotation> getInterceptorBindings() {
         if (interceptorBindings == null) interceptorBindings = new HashSet<>();
         return interceptorBindings;
