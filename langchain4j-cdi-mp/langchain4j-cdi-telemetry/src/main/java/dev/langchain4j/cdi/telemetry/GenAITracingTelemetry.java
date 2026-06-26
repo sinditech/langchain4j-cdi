@@ -20,6 +20,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +50,8 @@ public abstract class GenAITracingTelemetry {
 
         GEN_AI_PROVIDERS = Collections.unmodifiableMap(providers);
     }
+
+    private final Logger LOGGER = Logger.getLogger(this.getClass().getName());
 
     protected void traceModelProvider(final Span span, final ModelProvider provider) {
         span.setAttribute("gen_ai.provider.name", GEN_AI_PROVIDERS.get(provider));
@@ -109,7 +113,7 @@ public abstract class GenAITracingTelemetry {
         final ChatRequestParameters parameters = request.parameters();
 
         try {
-            final Method seedMethod = parameters.getClass().getMethod("seed", (Class<?>[]) null);
+            final Method seedMethod = parameters.getClass().getMethod("seed");
             if (seedMethod != null) {
                 Object seed = seedMethod.invoke(parameters, (Object[]) null);
                 if (seed != null) span.setAttribute("gen_ai.request.seed", (Integer) seed);
@@ -119,10 +123,11 @@ public abstract class GenAITracingTelemetry {
                 | IllegalAccessException
                 | IllegalArgumentException
                 | InvocationTargetException e) {
+            LOGGER.log(Level.WARNING, "The seed() method could not be found.", e);
         }
 
         try {
-            final Method reasoningEffortMethod = parameters.getClass().getMethod("reasoningEffort", (Class<?>[]) null);
+            final Method reasoningEffortMethod = parameters.getClass().getMethod("reasoningEffort");
             if (reasoningEffortMethod != null) {
                 Object reasoningEffort = reasoningEffortMethod.invoke(parameters, (Object[]) null);
                 if (reasoningEffort != null)
@@ -133,6 +138,7 @@ public abstract class GenAITracingTelemetry {
                 | IllegalAccessException
                 | IllegalArgumentException
                 | InvocationTargetException e) {
+            LOGGER.log(Level.WARNING, "The reasoningEffort() method could not be found.", e);
         }
     }
 

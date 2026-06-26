@@ -32,7 +32,6 @@ public class SpanAgentListener extends GenAITracingTelemetry implements AgentLis
 
     @Override
     public void afterAgentInvocation(AgentResponse agentResponse) {
-        // TODO Auto-generated method stub
         Span span = createInvokeAgentSpan(agentResponse.agenticScope(), agentResponse.agent());
         try (Scope scope = span.makeCurrent()) {
             if (agentResponse.chatRequest() != null) traceChatRequest(span, agentResponse.chatRequest());
@@ -44,7 +43,6 @@ public class SpanAgentListener extends GenAITracingTelemetry implements AgentLis
 
     @Override
     public void onAgentInvocationError(AgentInvocationError agentInvocationError) {
-        // TODO Auto-generated method stub
         Span span = createInvokeAgentSpan(agentInvocationError.agenticScope(), agentInvocationError.agent());
         try (Scope scope = span.makeCurrent()) {
             traceException(span, agentInvocationError.error());

@@ -32,8 +32,6 @@ public class SpanChatModelListener extends GenAITracingTelemetry implements Chat
 
     @Override
     public void onRequest(ChatModelRequestContext requestContext) {
-        // TODO Auto-generated method stub
-
         final ChatRequest request = requestContext.chatRequest();
         SpanBuilder spanBuilder = tracer.spanBuilder(
                         GEN_AI_OPERATION.toString() + " " + request.parameters().modelName())
@@ -52,7 +50,6 @@ public class SpanChatModelListener extends GenAITracingTelemetry implements Chat
 
     @Override
     public void onResponse(ChatModelResponseContext responseContext) {
-        // TODO Auto-generated method stub
         Span span = (Span) responseContext.attributes().get(OTEL_SPAN_KEY_NAME);
         if (span != null) {
             traceChatResponse(span, responseContext.chatResponse());
@@ -64,7 +61,6 @@ public class SpanChatModelListener extends GenAITracingTelemetry implements Chat
 
     @Override
     public void onError(ChatModelErrorContext errorContext) {
-        // TODO Auto-generated method stub
         Span span = (Span) errorContext.attributes().get(OTEL_SPAN_KEY_NAME);
         if (span != null) {
             traceException(span, errorContext.error());
