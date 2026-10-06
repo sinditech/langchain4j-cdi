@@ -27,6 +27,7 @@ open module dev.langchain4j.cdi.core {
     exports dev.langchain4j.cdi.aiservice;
     exports dev.langchain4j.cdi.core.config.spi;
     exports dev.langchain4j.cdi.core.http;
+    exports dev.langchain4j.cdi.decision;
     exports dev.langchain4j.cdi.guardrail;
     exports dev.langchain4j.cdi.plugin;
     exports dev.langchain4j.cdi.spi;

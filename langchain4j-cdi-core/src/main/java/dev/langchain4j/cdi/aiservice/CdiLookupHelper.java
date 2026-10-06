@@ -13,7 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Shared CDI bean resolution utilities used by both {@link CommonAIServiceCreator} and
+ * Shared CDI bean resolution utilities used by both {@link CommonDecisionServiceCreator} and
  * {@link dev.langchain4j.cdi.agent.CommonAgentCreator}.
  */
 public final class CdiLookupHelper {
