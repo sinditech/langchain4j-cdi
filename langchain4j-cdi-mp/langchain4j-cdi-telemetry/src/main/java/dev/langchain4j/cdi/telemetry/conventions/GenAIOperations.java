@@ -1,5 +1,5 @@
 /** */
-package dev.langchain4j.cdi.telemetry;
+package dev.langchain4j.cdi.telemetry.conventions;
 
 /**
  * Creates metrics that follow the <a
@@ -19,6 +19,10 @@ public enum GenAIOperations {
     /** Create or initialize a memory store. */
     CREATE_MEMORY_STORE("create_memory_store", "Create or initialize a memory store"),
     /** Delete memory records. */
+    /** Decision-model inference that answers typed questions about input, such as predicates, choices, or scores. */
+    DECISION(
+            "decision",
+            "Decision-model inference that answers typed questions about input, such as predicates, choices, or scores."),
     DELETE_MEMORY("delete_memory", "Delete memory records"),
     /** Delete or deprovision a memory store. */
     DELETE_MEMORY_STORE("delete_memory_store", "Delete or deprovision a memory store"),

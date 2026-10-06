@@ -141,7 +141,7 @@ public class CommonAIServiceCreator {
         return builder.build();
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings({"unchecked"})
     private static void registerNamedListeners(
             AiServices<?> builder, Instance<Object> lookup, String[] listenerNames, Class<?> interfaceClass) {
         for (String name : listenerNames) {
