@@ -2,10 +2,11 @@
 package dev.langchain4j.cdi.telemetry;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.cdi.telemetry.conventions.GenAIAttributes;
+import dev.langchain4j.cdi.telemetry.conventions.GenAIExceptionAttributes;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.model.ModelProvider;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -14,16 +15,14 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -36,40 +35,55 @@ import java.util.stream.Collectors;
  */
 public abstract class GenAITracingTelemetry {
 
-    /** Creates a new instance. */
-    protected GenAITracingTelemetry() {}
-
-    private static final Map<ModelProvider, String> GEN_AI_PROVIDERS;
-
-    static {
-        Map<ModelProvider, String> providers = new LinkedHashMap<>();
-        providers.put(ModelProvider.ANTHROPIC, "anthropic");
-        providers.put(ModelProvider.AMAZON_BEDROCK, "aws.bedrock");
-        providers.put(ModelProvider.AZURE_OPEN_AI, "azure.ai.openai");
-        providers.put(ModelProvider.GOOGLE_AI_GEMINI, "gcp.gemini");
-        providers.put(ModelProvider.GOOGLE_VERTEX_AI_ANTHROPIC, "gcp.vertex_ai");
-        providers.put(ModelProvider.GOOGLE_VERTEX_AI_GEMINI, "gcp.vertex_ai");
-        providers.put(ModelProvider.MISTRAL_AI, "mistral_ai");
-        providers.put(ModelProvider.OPEN_AI, "openai");
-        providers.put(ModelProvider.WATSONX, "ibm.watsonx.ai");
-
-        Arrays.stream(ModelProvider.values())
-                .filter(provider -> !providers.containsKey(provider))
-                .forEach(provider -> providers.put(provider, provider.toString().toLowerCase()));
-
-        GEN_AI_PROVIDERS = Collections.unmodifiableMap(providers);
-    }
-
-    private final Logger LOGGER = Logger.getLogger(this.getClass().getName());
+    private static final Logger LOGGER = Logger.getLogger(GenAITracingTelemetry.class.getName());
 
     /**
-     * Sets the {@code gen_ai.provider.name} span attribute from the given model provider.
+     * Populates the span with GenAI request attributes from the given chat request.
      *
      * @param span the span to populate
-     * @param provider the model provider
+     * @param request the chat request containing model parameters and messages
      */
-    protected void traceModelProvider(final Span span, final ModelProvider provider) {
-        span.setAttribute("gen_ai.provider.name", GEN_AI_PROVIDERS.get(provider));
+    protected static void traceChatRequest(final Span span, final ChatRequest request) {
+        traceChatRequest(span, request, false);
+    }
+
+    /**
+     * Populates the span with GenAI request attributes from the given chat request.
+     *
+     * @param span the span to populate
+     * @param request the chat request containing model parameters and messages
+     * @param captureMessagesAndTools whether to trace all chat request system instructions, messages and tools
+     */
+    protected static void traceChatRequest(
+            final Span span, final ChatRequest request, final boolean captureMessagesAndTools) {
+        final ChatRequestParameters parameters = request.parameters();
+
+        span.setAttribute(GenAIAttributes.REQUEST_MODEL.toString(), parameters.modelName());
+
+        if (parameters.maxOutputTokens() != null)
+            span.setAttribute(GenAIAttributes.REQUEST_MAX_TOKENS.toString(), parameters.maxOutputTokens());
+
+        if (parameters.temperature() != null)
+            span.setAttribute(GenAIAttributes.REQUEST_TEMPERATURE.toString(), parameters.temperature());
+
+        if (parameters.topK() != null) span.setAttribute(GenAIAttributes.REQUEST_TOP_K.toString(), parameters.topK());
+
+        if (parameters.topP() != null) span.setAttribute(GenAIAttributes.REQUEST_TOP_P.toString(), parameters.topP());
+
+        if (parameters.presencePenalty() != null)
+            span.setAttribute(GenAIAttributes.REQUEST_PRESENCE_PENALTY.toString(), parameters.presencePenalty());
+
+        if (parameters.frequencyPenalty() != null)
+            span.setAttribute(GenAIAttributes.REQUEST_FREQUENCY_PENALTY.toString(), parameters.frequencyPenalty());
+
+        if (parameters.stopSequences() != null)
+            span.setAttribute(
+                    AttributeKey.stringArrayKey(GenAIAttributes.REQUEST_STOP_SEQUENCES.toString()),
+                    parameters.stopSequences());
+
+        traceFurtherAttributes(span, parameters);
+
+        if (captureMessagesAndTools) traceChatRequestMessagesAndTools(span, request);
     }
 
     /**
@@ -78,31 +92,11 @@ public abstract class GenAITracingTelemetry {
      * @param span the span to populate
      * @param request the chat request containing model parameters and messages
      */
-    protected void traceChatRequest(final Span span, final ChatRequest request) {
+    protected static void traceChatRequestMessagesAndTools(final Span span, final ChatRequest request) {
         final List<ChatMessage> inputMessages = new ArrayList<>();
         final List<ChatMessage> systemInstructions = new ArrayList<>();
 
         final ChatRequestParameters parameters = request.parameters();
-
-        if (parameters.maxOutputTokens() != null)
-            span.setAttribute("gen_ai.request.max_tokens", parameters.maxOutputTokens());
-
-        if (parameters.temperature() != null) span.setAttribute("gen_ai.request.temperature", parameters.temperature());
-
-        if (parameters.topK() != null) span.setAttribute("gen_ai.request.top_k", parameters.topK());
-
-        if (parameters.topP() != null) span.setAttribute("gen_ai.request.top_p", parameters.topP());
-
-        if (parameters.presencePenalty() != null)
-            span.setAttribute("gen_ai.request.presence_penalty", parameters.presencePenalty());
-
-        if (parameters.frequencyPenalty() != null)
-            span.setAttribute("gen_ai.request.frequency_penalty", parameters.frequencyPenalty());
-
-        if (parameters.stopSequences() != null)
-            span.setAttribute(AttributeKey.stringArrayKey("gen_ai.request.stop_sequences"), parameters.stopSequences());
-
-        captureFurtherRequests(span, request);
 
         if (request.messages() != null) {
             request.messages().stream().forEach(message -> {
@@ -121,7 +115,7 @@ public abstract class GenAITracingTelemetry {
 
         if (parameters.toolSpecifications() != null) {
             span.setAttribute(
-                    "gen_ai.tool.definitions",
+                    GenAIAttributes.TOOL_DEFINITIONS.toString(),
                     "["
                             + parameters.toolSpecifications().stream()
                                     .map(ToolSpecification::toJson)
@@ -130,9 +124,7 @@ public abstract class GenAITracingTelemetry {
         }
     }
 
-    private void captureFurtherRequests(final Span span, final ChatRequest request) {
-        final ChatRequestParameters parameters = request.parameters();
-
+    protected static void traceFurtherAttributes(final Span span, final ChatRequestParameters parameters) {
         try {
             final Method seedMethod = parameters.getClass().getMethod("seed");
             Object seed = seedMethod.invoke(parameters);
@@ -165,20 +157,47 @@ public abstract class GenAITracingTelemetry {
      * @param span the span to populate
      * @param response the chat response containing metadata and token usage
      */
-    protected void traceChatResponse(final Span span, final ChatResponse response) {
-        span.setAttribute("gen_ai.response.id", response.metadata().id())
-                .setAttribute("gen_ai.response.model", response.metadata().modelName());
+    protected static void traceChatResponse(final Span span, final ChatResponse response) {
+        traceChatResponse(span, response, false);
+    }
+
+    /**
+     * Populates the span with GenAI response attributes from the given chat response.
+     *
+     * @param span the span to populate
+     * @param response the chat response containing metadata and token usage
+     * @param captureMessages whether to trace all chat response messages
+     */
+    protected static void traceChatResponse(
+            final Span span, final ChatResponse response, final boolean captureMessages) {
+        span.setAttribute(
+                        GenAIAttributes.RESPONSE_ID.toString(),
+                        response.metadata().id())
+                .setAttribute(GenAIAttributes.RESPONSE_MODEL.toString(), response.modelName());
         if (response.finishReason() != null) {
             span.setAttribute(
-                    AttributeKey.stringArrayKey("gen_ai.response.finish_reasons"),
+                    AttributeKey.stringArrayKey(GenAIAttributes.RESPONSE_FINISH_REASONS.toString()),
                     Arrays.asList(response.metadata().finishReason().toString()));
         }
         TokenUsage tokenUsage = response.metadata().tokenUsage();
         if (tokenUsage != null) {
-            span.setAttribute("gen_ai.usage.output_tokens", tokenUsage.outputTokenCount())
-                    .setAttribute("gen_ai.usage.input_tokens", tokenUsage.inputTokenCount());
+            if (tokenUsage.outputTokenCount() != null)
+                span.setAttribute(GenAIAttributes.USAGE_OUTPUT_TOKENS.toString(), tokenUsage.outputTokenCount());
+
+            if (tokenUsage.inputTokenCount() != null)
+                span.setAttribute(GenAIAttributes.USAGE_INPUT_TOKENS.toString(), tokenUsage.inputTokenCount());
         }
 
+        if (captureMessages) traceChatResponseMessages(span, response);
+    }
+
+    /**
+     * Populates the span with GenAI response attributes from the given chat response.
+     *
+     * @param span the span to populate
+     * @param response the chat response containing metadata and token usage
+     */
+    protected static void traceChatResponseMessages(final Span span, final ChatResponse response) {
         if (response.aiMessage() != null) {
             span.setAttribute(
                     "gen_ai.output.messages", ChatMessageSerializer.messagesToJson(List.of(response.aiMessage())));
@@ -194,13 +213,21 @@ public abstract class GenAITracingTelemetry {
      * @param span the span to record the exception on
      * @param exception the exception to record
      */
-    protected void traceException(final Span span, final Throwable exception) {
+    protected static void traceException(final Span span, final Throwable exception) {
         StringWriter stacktraceWriter = new StringWriter();
         exception.printStackTrace(new PrintWriter(stacktraceWriter));
         AttributesBuilder builder = Attributes.builder()
-                .put("exception.message", exception.getMessage())
-                .put("exception.type", exception.getClass().getName())
-                .put("exception.stacktrace", stacktraceWriter.toString());
-        span.addEvent("gen_ai.client.operation.exception", builder.build());
+                .put(GenAIExceptionAttributes.EXCEPTION_MESSAGE.toString(), exception.getMessage())
+                .put(
+                        GenAIExceptionAttributes.EXCEPTION_TYPE.toString(),
+                        exception.getClass().getName())
+                .put(GenAIExceptionAttributes.EXCEPTION_STACKTRACE.toString(), stacktraceWriter.toString());
+        span.addEvent(GenAIExceptionAttributes.CLIENT_OPERATION_EXCEPTION_EVENT.toString(), builder.build());
+    }
+
+    protected static void closeScope(Scope scope) {
+        if (scope != null) {
+            scope.close();
+        }
     }
 }

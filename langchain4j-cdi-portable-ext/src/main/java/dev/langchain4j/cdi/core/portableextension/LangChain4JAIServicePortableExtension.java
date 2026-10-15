@@ -4,6 +4,7 @@ import dev.langchain4j.cdi.agent.AgentAnnotationMeta;
 import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterAIService;
 import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
+import dev.langchain4j.cdi.spi.RegisterDecisionService;
 import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
 import dev.langchain4j.cdi.spi.RegisterLoopAgent;
 import dev.langchain4j.cdi.spi.RegisterMcpClientAgent;
@@ -38,6 +39,7 @@ public class LangChain4JAIServicePortableExtension implements Extension {
     private static final Logger LOGGER = Logger.getLogger(LangChain4JAIServicePortableExtension.class.getName());
     private static final Set<Class<?>> detectedAIServicesDeclaredInterfaces = new HashSet<>();
     private static final Set<Class<?>> detectedAgentDeclaredInterfaces = new HashSet<>();
+    private static final Set<Class<?>> detectedDecisionsDeclaredInterfaces = new HashSet<>();
 
     /** Creates a new instance of this portable extension. */
     public LangChain4JAIServicePortableExtension() {}
@@ -60,12 +62,18 @@ public class LangChain4JAIServicePortableExtension implements Extension {
         return detectedAgentDeclaredInterfaces;
     }
 
+    /** @return the detectedDecisionsDeclaredInterfaces */
+    public static Set<Class<?>> getDetectedDecisionsDeclaredInterfaces() {
+        return detectedDecisionsDeclaredInterfaces;
+    }
+
     // These sets are static so they persist across container restarts in the same JVM (e.g. Arquillian,
     // Weld SE restart). The BeforeBeanDiscovery observer below clears them at the start of each new
     // container lifecycle to prevent stale entries from a previous run from leaking into the new one.
     void beforeBeanDiscovery(@Observes BeforeBeanDiscovery event) {
         detectedAIServicesDeclaredInterfaces.clear();
         detectedAgentDeclaredInterfaces.clear();
+        detectedDecisionsDeclaredInterfaces.clear();
     }
 
     <T> void processAnnotatedType(@Observes @WithAnnotations({RegisterAIService.class}) ProcessAnnotatedType<T> pat) {
@@ -107,6 +115,19 @@ public class LangChain4JAIServicePortableExtension implements Extension {
         }
     }
 
+    <T> void processDecisionAnnotatedType(
+            @Observes @WithAnnotations({RegisterDecisionService.class}) ProcessAnnotatedType<T> pat) {
+        if (pat.getAnnotatedType().getJavaClass().isInterface()) {
+            LOGGER.info("processAnnotatedType register decsion service "
+                    + pat.getAnnotatedType().getJavaClass().getName());
+            detectedDecisionsDeclaredInterfaces.add(pat.getAnnotatedType().getJavaClass());
+        } else {
+            LOGGER.warning("processAnnotatedType reject "
+                    + pat.getAnnotatedType().getJavaClass().getName() + " which is not an interface");
+            pat.veto();
+        }
+    }
+
     /**
      * This is useful for application servers that can't support proccessAnnotatedType.
      *
@@ -117,6 +138,8 @@ public class LangChain4JAIServicePortableExtension implements Extension {
             Class<?> rawType = Reflections.getRawType(event.getInjectionPoint().getType());
             if (classSatisfies(rawType, RegisterAIService.class)) detectedAIServicesDeclaredInterfaces.add(rawType);
             if (AgentAnnotationMeta.isAgentInterface(rawType)) detectedAgentDeclaredInterfaces.add(rawType);
+            if (classSatisfies(rawType, RegisterDecisionService.class))
+                detectedDecisionsDeclaredInterfaces.add(rawType);
         }
 
         if (Instance.class.equals(
@@ -126,6 +149,8 @@ public class LangChain4JAIServicePortableExtension implements Extension {
                 detectedAIServicesDeclaredInterfaces.add(parameterizedType);
             if (AgentAnnotationMeta.isAgentInterface(parameterizedType))
                 detectedAgentDeclaredInterfaces.add(parameterizedType);
+            if (classSatisfies(parameterizedType, RegisterDecisionService.class))
+                detectedDecisionsDeclaredInterfaces.add(parameterizedType);
         }
     }
 
@@ -138,6 +163,10 @@ public class LangChain4JAIServicePortableExtension implements Extension {
         for (Class<?> agentClass : detectedAgentDeclaredInterfaces) {
             LOGGER.info("afterBeanDiscovery create synthetic agent:  " + agentClass.getName());
             afterBeanDiscovery.addBean(new LangChain4JAIAgentBean<>(agentClass, beanManager));
+        }
+        for (Class<?> decisionServiceClass : detectedDecisionsDeclaredInterfaces) {
+            LOGGER.info("afterBeanDiscovery create synthetic Decision service:  " + decisionServiceClass.getName());
+            afterBeanDiscovery.addBean(new LangChain4JDecisionServiceBean<>(decisionServiceClass, beanManager));
         }
     }
 

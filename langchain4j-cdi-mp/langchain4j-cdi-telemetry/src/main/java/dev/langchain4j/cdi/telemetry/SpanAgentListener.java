@@ -6,6 +6,8 @@ import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentResponse;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.scope.AgenticScope;
+import dev.langchain4j.cdi.telemetry.conventions.GenAIAttributes;
+import dev.langchain4j.cdi.telemetry.conventions.GenAIOperations;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanKind;
@@ -24,11 +26,6 @@ import jakarta.inject.Inject;
  */
 @Dependent
 public class SpanAgentListener extends GenAITracingTelemetry implements AgentListener {
-
-    /** Creates a new instance. */
-    public SpanAgentListener() {}
-
-    private static final GenAIOperations OPERATION_INVOKE_AGENT = GenAIOperations.INVOKE_AGENT;
 
     @Inject
     private Tracer tracer;
@@ -57,13 +54,15 @@ public class SpanAgentListener extends GenAITracingTelemetry implements AgentLis
     private Span createInvokeAgentSpan(final AgenticScope agenticScope, final AgentInstance agent) {
         SpanBuilder spanBuilder = tracer.spanBuilder(GenAIOperations.INVOKE_AGENT.toString() + " " + agent.name())
                 .setSpanKind(SpanKind.CLIENT)
-                .setAttribute("gen_ai.operation.name", OPERATION_INVOKE_AGENT.toString())
-                .setAttribute("gen_ai.agent.description", agent.description())
-                .setAttribute("gen_ai.agent.id", agent.agentId())
-                .setAttribute("gen_ai.agent.name", agent.name());
+                .setAttribute(GenAIAttributes.OPERATION_NAME.toString(), GenAIOperations.INVOKE_AGENT.toString())
+                .setAttribute(GenAIAttributes.AGENT_DESCRIPTION.toString(), agent.description())
+                .setAttribute(GenAIAttributes.AGENT_ID.toString(), agent.agentId())
+                .setAttribute(GenAIAttributes.AGENT_NAME.toString(), agent.name())
+                .setAttribute("agent.topology", agent.topology().name());
 
         if (agenticScope.memoryId() != null) {
-            spanBuilder.setAttribute("gen_ai.conversation.id", String.valueOf(agenticScope.memoryId()));
+            spanBuilder.setAttribute(
+                    GenAIAttributes.CONVERSATION_ID.toString(), String.valueOf(agenticScope.memoryId()));
         }
 
         return spanBuilder.startSpan();

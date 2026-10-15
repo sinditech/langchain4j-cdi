@@ -19,6 +19,7 @@ open module dev.langchain4j.cdi.core {
     // langchain4j-agentic is an optional dependency (agent topologies) -> static (compile-time, optional at
     // runtime). Not transitive: consumers that actually use the agent API add their own requires.
     requires static langchain4j.agentic;
+    requires static langchain4j.guardrails;
     requires langchain4j.http.client;
 
     // Public API
@@ -27,6 +28,7 @@ open module dev.langchain4j.cdi.core {
     exports dev.langchain4j.cdi.aiservice;
     exports dev.langchain4j.cdi.core.config.spi;
     exports dev.langchain4j.cdi.core.http;
+    exports dev.langchain4j.cdi.decision;
     exports dev.langchain4j.cdi.guardrail;
     exports dev.langchain4j.cdi.plugin;
     exports dev.langchain4j.cdi.spi;

@@ -30,7 +30,7 @@ The telemetry module automatically tracks:
 
 ## Semantic Conventions
 
-The telemetry follows the [OpenTelemetry Semantic Conventions for GenAI](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
+The telemetry follows the [OpenTelemetry Semantic Conventions for GenAI](https://github.com/open-telemetry/semantic-conventions-genai):
 
 | Attribute | Description |
 |-----------|-------------|

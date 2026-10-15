@@ -9,6 +9,7 @@ import dev.langchain4j.cdi.aiservice.CdiLookupHelper;
 import dev.langchain4j.cdi.spi.RegisterA2AAgent;
 import dev.langchain4j.cdi.spi.RegisterAIService;
 import dev.langchain4j.cdi.spi.RegisterConditionalAgent;
+import dev.langchain4j.cdi.spi.RegisterDecisionService;
 import dev.langchain4j.cdi.spi.RegisterHumanInTheLoopAgent;
 import dev.langchain4j.cdi.spi.RegisterLoopAgent;
 import dev.langchain4j.cdi.spi.RegisterMcpClientAgent;
@@ -46,6 +47,7 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
     private static final Logger LOGGER = Logger.getLogger(Langchain4JAIServiceBuildCompatibleExtension.class.getName());
     private static final Set<Class<?>> detectedAIServicesDeclaredInterfaces = new HashSet<>();
     private static final Set<Class<?>> detectedAgentDeclaredInterfaces = new HashSet<>();
+    private static final Set<Class<?>> detectedDecisionsDeclaredInterfaces = new HashSet<>();
     private static final Set<String> detectedTools = new HashSet<>();
 
     /** Synthetic bean parameter key for the AI service interface class. */
@@ -76,12 +78,20 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
     }
 
     /**
+     * Returns the set of detected decision interface classes.
+     *
+     * @return the detecteddecisionsdeclaredinterfaces
+     */
+    public static Set<Class<?>> getDetectedDecisionsDeclaredinterfaces() {
+        return detectedDecisionsDeclaredInterfaces;
+    }
+
+    /**
      * Adds a {@link Named} qualifier to detected tool classes so they are not removed by Quarkus bean pruning.
      *
      * @param classConfig the class configuration to enhance
      * @throws ClassNotFoundException if the tool class cannot be loaded
      */
-    @SuppressWarnings("unused")
     @Enhancement(types = Object.class, withSubtypes = true)
     @Priority(20)
     public void protectedToolsToBePurgedByQuarkus(ClassConfig classConfig) throws ClassNotFoundException {
@@ -101,7 +111,6 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
      * @param classConfig the class configuration to inspect
      * @throws ClassNotFoundException if the class cannot be loaded
      */
-    @SuppressWarnings("unused")
     @Enhancement(types = Object.class, withAnnotations = RegisterAIService.class, withSubtypes = true)
     @Priority(10)
     public void detectRegisterAIService(ClassConfig classConfig) throws ClassNotFoundException {
@@ -143,7 +152,6 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
      * @param classConfig the class configuration to inspect
      * @throws ClassNotFoundException if the class cannot be loaded
      */
-    @SuppressWarnings("unused")
     @Enhancement(
             types = Object.class,
             withAnnotations = {
@@ -164,6 +172,19 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
     public void detectRegisterAgent(ClassConfig classConfig) throws ClassNotFoundException {
         ClassInfo classInfo = classConfig.info();
         registerAgent(classInfo);
+    }
+
+    /**
+     * Detects classes annotated with {@link RegisterDecisionService} and registers them for synthesis.
+     *
+     * @param classConfig the class configuration to inspect
+     * @throws ClassNotFoundException if the class cannot be loaded
+     */
+    @Enhancement(types = Object.class, withAnnotations = RegisterDecisionService.class, withSubtypes = true)
+    @Priority(12)
+    public void detectRegisterDecisionService(ClassConfig classConfig) throws ClassNotFoundException {
+        ClassInfo classInfo = classConfig.info();
+        registerDecisionService(classInfo);
     }
 
     private void registerAIService(ClassInfo classInfo) throws ClassNotFoundException {
@@ -198,6 +219,20 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
         }
     }
 
+    private void registerDecisionService(ClassInfo classInfo) throws ClassNotFoundException {
+        if (classInfo.isInterface()) {
+            String className = classInfo.name();
+            Class<?> interfaceClass = getLoadClass(className);
+            if (!detectedDecisionsDeclaredInterfaces.contains(interfaceClass)) {
+                LOGGER.info("RegisterDecisionService of type " + classInfo.name());
+                detectedDecisionsDeclaredInterfaces.add(interfaceClass);
+            }
+        } else {
+            LOGGER.warning(
+                    "The class is Annotated with @RegisterDecisionService, but only interface are allowed" + classInfo);
+        }
+    }
+
     // Mirrors AgentAnnotationMeta.detect(Class<?>) but operates on the build-time ClassInfo type
     // rather than a runtime Class. Keep both lists in sync when adding new topology annotations.
     private static boolean hasAnyAgentAnnotation(ClassInfo classInfo) {
@@ -224,7 +259,7 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
      * @param syntheticComponents the synthetic components builder provided by the CDI container
      * @throws ClassNotFoundException if a required class cannot be loaded
      */
-    @SuppressWarnings({"unused", "unchecked"})
+    @SuppressWarnings("unchecked")
     @Synthesis
     public void synthesisAllRegisterAIServices(SyntheticComponents syntheticComponents) throws ClassNotFoundException {
         LOGGER.info("synthesisAllRegisterAIServices");
@@ -270,6 +305,20 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
                     .scope(scope)
                     .name(beanName)
                     .withParam(PARAM_AGENT_INTERFACE_CLASS, interfaceClass);
+        }
+
+        for (Class<?> interfaceClass : detectedDecisionsDeclaredInterfaces) {
+            LOGGER.info("Create synthetic AI decision service " + interfaceClass);
+            RegisterDecisionService annotation = interfaceClass.getAnnotation(RegisterDecisionService.class);
+
+            SyntheticBeanBuilder<Object> builder =
+                    (SyntheticBeanBuilder<Object>) syntheticComponents.addBean(interfaceClass);
+
+            builder.createWith(DecisionServiceCreator.class)
+                    .type(interfaceClass)
+                    .scope(annotation.scope())
+                    .name("registeredDecisionService-" + interfaceClass.getName())
+                    .withParam(PARAM_INTERFACE_CLASS, interfaceClass);
         }
     }
 }
