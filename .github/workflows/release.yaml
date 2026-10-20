@@ -17,40 +17,53 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    environment: release
     steps:
       - name: Git checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
           server-id: central # Value of the distributionManagement/repository/id field of the pom.xml
-          server-username: MAVEN_CENTRAL_USERNAME
-          server-password: MAVEN_CENTRAL_PASSWORD
+          server-username-env-var: MAVEN_CENTRAL_USERNAME
+          server-password-env-var: MAVEN_CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: GPG_PASSPHRASE
-      - run: |
+          gpg-passphrase-env-var: GPG_PASSPHRASE
+      - name: Configure GPG for CI
+        run: |
+          printf '#!/bin/bash\ngpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" "$@"\n' > /tmp/gpg-loopback.sh
+          chmod +x /tmp/gpg-loopback.sh
+          /tmp/gpg-loopback.sh --sign --armor /dev/null || true
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      - name: Configure Git for release
+        run: |
           git config --global user.name 'Langchain4J CDI'
           git config --global user.email 'langchain4j.cdi@gmail.com'
+          git config --global commit.gpgsign true
+          git config --global user.signingkey ${{ secrets.GPG_SIGNING_KEY_ID }}
+          git config --global gpg.program /tmp/gpg-loopback.sh
       - name: Git environment
         run: |
           git remote -v
           git log
       - name: Release Prepare
-        run: ./mvnw --batch-mode release:prepare -e -DreleaseVersion=${{ github.event.inputs.version }} -DdevelopmentVersion=${{ github.event.inputs.nextVersion }}-SNAPSHOT
+        run: mvn --batch-mode release:prepare -e -DreleaseVersion=${{ github.event.inputs.version }} -DdevelopmentVersion=${{ github.event.inputs.nextVersion }}-SNAPSHOT
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_TTY: ""
       - name: Release Perform
         run: |
-          ./mvnw --batch-mode release:perform -P\!unpublished
+          mvn --batch-mode release:perform -P\!unpublished
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
+          GPG_TTY: ""
       - name: Push result report
         run: |
           git remote -v
@@ -63,7 +76,7 @@ jobs:
     needs: deploy
     steps:
       - name: Git checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-tags: true
       - name: "Determine tag"
@@ -75,7 +88,7 @@ jobs:
       - name: "Determine Release Name"
         run: "echo \"RELEASE_NAME=LangChain4J CDI ${{ github.event.inputs.version }}\" >> $GITHUB_ENV"
       - name: "Create release"
-        uses: "actions/github-script@v9"
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
           script: |
