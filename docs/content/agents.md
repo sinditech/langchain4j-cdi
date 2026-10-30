@@ -23,6 +23,7 @@ LangChain4j CDI provides 11 per-topology stereotype annotations for wiring agent
 | `@RegisterA2AAgent` | Agent-to-Agent protocol integration |
 | `@RegisterMcpClientAgent` | MCP client consuming external servers |
 | `@RegisterHumanInTheLoopAgent` | Human approval in agent flow |
+| `@RegisterDecisionAgent` | Decision agent execution |
 
 ## Common Attributes
 
