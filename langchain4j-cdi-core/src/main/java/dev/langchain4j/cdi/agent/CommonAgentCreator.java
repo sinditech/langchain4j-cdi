@@ -576,9 +576,12 @@ public class CommonAgentCreator {
                 .description(ann.description())
                 .name(ann.name())
                 .optional(ann.optional())
-                .outputKey(ann.outputKey())
-                .threshold(ann.threshold())
-                .thresholdProvider(thresholdProvider);
+                .outputKey(ann.outputKey());
+        if (thresholdProvider != null) {
+            builder.thresholdProvider(thresholdProvider);
+        } else if (!Double.isNaN(ann.threshold())) {
+            builder.threshold(ann.threshold());
+        }
         if (ann.typedOutputKey() != NoTypedKey.class) builder.outputKey(ann.typedOutputKey());
         applyListener(builder::listener, ann.agentListenerName(), lookup);
         applyDecisionActivationCondition(
@@ -1051,13 +1054,11 @@ public class CommonAgentCreator {
             return;
         }
         String description = CdiLookupHelper.resolveExpression(rawActivationConditionDescription);
-        if (bean instanceof Predicate) {
-            Predicate<AgenticScope> typed = (Predicate<AgenticScope>) bean;
-            if (hasText(description)) {
-                decisionBuilder.activationCondition(description, typed);
-            } else {
-                decisionBuilder.activationCondition(typed);
-            }
+        Predicate<AgenticScope> typed = (Predicate<AgenticScope>) bean;
+        if (hasText(description)) {
+            decisionBuilder.activationCondition(description, typed);
+        } else {
+            decisionBuilder.activationCondition(typed);
         }
     }
 

@@ -167,7 +167,7 @@ public class Langchain4JAIServiceBuildCompatibleExtension implements BuildCompat
                 RegisterA2AAgent.class,
                 RegisterMcpClientAgent.class,
                 RegisterHumanInTheLoopAgent.class,
-                RegisterDecisionAgent.class,
+                RegisterDecisionAgent.class
             },
             withSubtypes = true)
     @Priority(11)

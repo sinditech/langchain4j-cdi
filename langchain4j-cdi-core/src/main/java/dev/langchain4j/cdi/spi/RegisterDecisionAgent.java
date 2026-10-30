@@ -87,14 +87,14 @@ public @interface RegisterDecisionAgent {
     /**
      * CDI bean name of the decision model. Use {@code "#default"} for the default bean, or blank to skip.
      *
-     * @return the chat model bean name
+     * @return the decision model bean name
      */
     String decisionModelName() default "#default";
 
     /**
      * CDI bean name of the {@link ThresholdProvider}. Blank means no threshold provider of that name is wired.
      *
-     * @return the tool provider bean name
+     * @return the threshold provider bean name
      */
     String thresholdProviderName() default "";
 
